@@ -1,0 +1,10 @@
+
+[workspace]
+members = [
+  "crates/symgraph-cli",
+  "crates/symgraph-core",
+  "crates/symgraph-discovery",
+  "crates/symgraph-cxx",
+  "crates/symgraph-rust"
+]
+resolver = "2"

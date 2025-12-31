@@ -1,0 +1,26 @@
+{
+	"version": "2.0.0",
+	"tasks": [
+		{
+			"label": "cargo build",
+			"type": "shell",
+			"command": "C:\\Users\\vreshetiuk\\.cargo\\bin\\cargo.exe",
+			"args": ["build"],
+			"isBackground": false,
+			"problemMatcher": ["$rustc"],
+			"group": {
+				"kind": "build",
+				"isDefault": true
+			}
+		},
+		{
+			"label": "cargo check",
+			"type": "shell",
+			"command": "C:\\Users\\vreshetiuk\\.cargo\\bin\\cargo.exe",
+			"args": ["check"],
+			"isBackground": false,
+			"problemMatcher": ["$rustc"],
+			"group": "build"
+		}
+	]
+}
