@@ -250,6 +250,35 @@ enum Cmd {
         db: String,
     },
 
+    /// Analyze C++20 modules without libclang (regex-based parsing).
+    /// 
+    /// Parses C++20 module files directly to extract:
+    /// - Exported functions, classes, structs, enums
+    /// - Member functions and variables
+    /// - Type references and inheritance relationships
+    /// 
+    /// This works without needing compile_commands.json or libclang.
+    /// 
+    /// # Examples
+    /// ```bash
+    /// # Scan all module files in a directory
+    /// symgraph-cli scan-modules --root ~/myproject/modules --db project.db
+    /// 
+    /// # Include .cxx and .cpp files with modules
+    /// symgraph-cli scan-modules --root ~/myproject --db project.db
+    /// ```
+    ScanModules {
+        /// Root directory to scan for C++20 module files.
+        /// 
+        /// Scans for: .cppm, .ixx, .mxx, .cxx files
+        #[arg(long, value_name = "DIR")]
+        root: String,
+
+        /// Output SQLite database path.
+        #[arg(long, value_name = "PATH", default_value = "symgraph.db")]
+        db: String,
+    },
+
     /// Query the call graph: list functions called by a given function.
     /// 
     /// Uses the USR (Unified Symbol Resolution) identifier from libclang
@@ -285,6 +314,22 @@ enum Cmd {
         ///          "c:@S@MyClass@F@method#" for a class method.
         #[arg(long, value_name = "USR")]
         usr: String,
+    },
+
+    /// List all modules and their dependencies from the database.
+    /// 
+    /// Shows imported C++20 modules and their import relationships.
+    ListModules {
+        /// Path to the SQLite database with the symbol graph.
+        #[arg(long, value_name = "PATH")]
+        db: String,
+    },
+
+    /// Show database statistics (counts of symbols, edges, modules).
+    Stats {
+        /// Path to the SQLite database.
+        #[arg(long, value_name = "PATH")]
+        db: String,
     }
 }
 
@@ -300,7 +345,10 @@ fn main() -> Result<()> {
         }
         Cmd::ScanCxx { compdb, db } => scan_cxx(&compdb, &db)?,
         Cmd::ImportModules { root, db } => import_modules(&root, &db)?,
+        Cmd::ScanModules { root, db } => scan_modules(&root, &db)?,
         Cmd::QueryCalls { db, usr } => query_calls(&db, &usr)?,
+        Cmd::ListModules { db } => list_modules(&db)?,
+        Cmd::Stats { db } => show_stats(&db)?,
     }
     Ok(())
 }
@@ -565,6 +613,97 @@ fn import_modules(root: &str, db_path: &str) -> Result<()> {
     Ok(())
 }
 
+/// Scans C++20 modules and extracts symbols without libclang.
+/// 
+/// Uses regex-based parsing to extract:
+/// - Exported functions, classes, structs, enums
+/// - Member functions and variables
+/// - Type references and inheritance relationships
+/// 
+/// This is useful when libclang cannot parse the files (e.g., C++20 modules with
+/// CMake-generated compile_commands.json containing @modmap response files).
+fn scan_modules(root: &str, db_path: &str) -> Result<()> {
+    use walkdir::WalkDir;
+    use symgraph_cxx::modules::analyze_cpp_module;
+    
+    let mut db = Db::open(db_path)?;
+    let mut file_count = 0;
+    let mut symbol_count = 0;
+    let mut relation_count = 0;
+    
+    // Recursively walk the directory tree
+    for entry in WalkDir::new(root).into_iter().filter_map(|e| e.ok()) {
+        let p = entry.path();
+        let path_str = p.display().to_string();
+        
+        // Check for module file extensions
+        let ext = p.extension().and_then(|e| e.to_str()).unwrap_or("");
+        if !["cppm", "ixx", "mxx", "cxx"].contains(&ext) {
+            continue;
+        }
+        
+        // Analyze the module file
+        match analyze_cpp_module(&path_str) {
+            Ok(Some(analysis)) => {
+                file_count += 1;
+                
+                // Register the module
+                let mid = upsert_module(&mut db.conn, &analysis.info.name, "cpp20-module", &analysis.info.path)?;
+                let fid = db.ensure_file(&analysis.info.path, "c++")?;
+                
+                // Import module dependencies
+                for imp in &analysis.info.imports {
+                    let to = upsert_module(&mut db.conn, imp, "cpp20-module", "")?;
+                    let _eid = insert_edge(&mut db.conn, None, None, Some(mid), Some(to), "module-import")?;
+                    relation_count += 1;
+                }
+                
+                // Insert symbols
+                for sym in &analysis.symbols {
+                    // Create a pseudo-USR for the symbol
+                    let usr = format!("module:{}:{}", analysis.info.name, sym.name);
+                    let _sid = insert_symbol(&mut db.conn, fid, Some(&usr), None,
+                                            &sym.name, &sym.kind, sym.is_exported)?;
+                    symbol_count += 1;
+                }
+                
+                // Insert relations
+                for rel in &analysis.relations {
+                    // For now, just count them - full edge insertion would need symbol lookup
+                    relation_count += 1;
+                    
+                    // Try to find symbols and create edges
+                    let from_usr = format!("module:{}:{}", analysis.info.name, rel.from_name);
+                    let to_usr = format!("module:{}:{}", analysis.info.name, rel.to_name);
+                    
+                    if let (Some(from_id), Some(to_id)) = (
+                        db.find_symbol_by_usr(&from_usr)?,
+                        db.find_symbol_by_usr(&to_usr)?
+                    ) {
+                        let _eid = insert_edge(&mut db.conn, Some(from_id), Some(to_id), None, None, &rel.kind)?;
+                    }
+                }
+                
+                println!("  {} - {} symbols, {} relations", 
+                        analysis.info.name, analysis.symbols.len(), analysis.relations.len());
+            }
+            Ok(None) => {
+                // Not a module file, skip
+            }
+            Err(e) => {
+                eprintln!("Error parsing {}: {}", path_str, e);
+            }
+        }
+    }
+    
+    println!("\n=== Summary ===");
+    println!("Files processed: {}", file_count);
+    println!("Symbols extracted: {}", symbol_count);
+    println!("Relations found: {}", relation_count);
+    
+    Ok(())
+}
+
 /// Queries the call graph to find functions called by a given function.
 /// 
 /// Looks up a function by its USR (Unified Symbol Resolution) identifier
@@ -591,5 +730,90 @@ fn query_calls(db_path: &str, usr: &str) -> Result<()> {
     for r in rows { 
         println!("{r}"); 
     }
+    Ok(())
+}
+
+/// Lists all modules and their import dependencies.
+fn list_modules(db_path: &str) -> Result<()> {
+    let db = Db::open(db_path)?;
+    
+    // Query all modules
+    let mut stmt = db.conn.prepare("SELECT id, name, kind, path FROM modules ORDER BY name")?;
+    let modules: Vec<(i64, String, String, String)> = stmt.query_map([], |row| {
+        Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?))
+    })?.filter_map(|r| r.ok()).collect();
+    
+    if modules.is_empty() {
+        println!("No modules found in database.");
+        return Ok(());
+    }
+    
+    println!("=== Modules ===");
+    for (id, name, kind, path) in &modules {
+        println!("{}: {} ({}) - {}", id, name, kind, path);
+    }
+    
+    // Query module imports
+    println!("\n=== Module Dependencies ===");
+    let mut stmt = db.conn.prepare(
+        "SELECT m1.name, m2.name FROM edges e
+         JOIN modules m1 ON e.from_module = m1.id
+         JOIN modules m2 ON e.to_module = m2.id
+         WHERE e.kind = 'module-import'"
+    )?;
+    let imports: Vec<(String, String)> = stmt.query_map([], |row| {
+        Ok((row.get(0)?, row.get(1)?))
+    })?.filter_map(|r| r.ok()).collect();
+    
+    if imports.is_empty() {
+        println!("No module imports found.");
+    } else {
+        for (from, to) in imports {
+            println!("  {} -> {}", from, to);
+        }
+    }
+    
+    Ok(())
+}
+
+/// Shows database statistics.
+fn show_stats(db_path: &str) -> Result<()> {
+    let db = Db::open(db_path)?;
+    
+    let file_count: i64 = db.conn.query_row("SELECT COUNT(*) FROM files", [], |r| r.get(0))?;
+    let symbol_count: i64 = db.conn.query_row("SELECT COUNT(*) FROM symbols", [], |r| r.get(0))?;
+    let occurrence_count: i64 = db.conn.query_row("SELECT COUNT(*) FROM occurrences", [], |r| r.get(0))?;
+    let edge_count: i64 = db.conn.query_row("SELECT COUNT(*) FROM edges", [], |r| r.get(0))?;
+    let module_count: i64 = db.conn.query_row("SELECT COUNT(*) FROM modules", [], |r| r.get(0))?;
+    
+    println!("=== Database Statistics ===");
+    println!("Files:       {}", file_count);
+    println!("Symbols:     {}", symbol_count);
+    println!("Occurrences: {}", occurrence_count);
+    println!("Edges:       {}", edge_count);
+    println!("Modules:     {}", module_count);
+    
+    // Edge breakdown
+    println!("\n=== Edge Types ===");
+    let mut stmt = db.conn.prepare("SELECT kind, COUNT(*) FROM edges GROUP BY kind")?;
+    let edge_types: Vec<(String, i64)> = stmt.query_map([], |row| {
+        Ok((row.get(0)?, row.get(1)?))
+    })?.filter_map(|r| r.ok()).collect();
+    
+    for (kind, count) in edge_types {
+        println!("  {}: {}", kind, count);
+    }
+    
+    // Symbol breakdown
+    println!("\n=== Symbol Types ===");
+    let mut stmt = db.conn.prepare("SELECT kind, COUNT(*) FROM symbols GROUP BY kind ORDER BY COUNT(*) DESC LIMIT 10")?;
+    let symbol_types: Vec<(String, i64)> = stmt.query_map([], |row| {
+        Ok((row.get(0)?, row.get(1)?))
+    })?.filter_map(|r| r.ok()).collect();
+    
+    for (kind, count) in symbol_types {
+        println!("  {}: {}", kind, count);
+    }
+    
     Ok(())
 }

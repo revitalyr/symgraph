@@ -1,0 +1,16 @@
+﻿# 1. Перейдите в директорию symgraph
+cd c:\Users\vreshetiuk\work\symgraph\symgraph
+
+# 2. Сгенерируйте compile_commands.json (автоопределит CMake)
+cargo run -p symgraph-cli -- generate-compdb --project C:\Users\vreshetiuk\work\index_libs --build-dir C:\Users\vreshetiuk\work\index_libs\build
+
+# 3. Проанализируйте код
+cargo run -p symgraph-cli -- scan-cxx --compdb C:\Users\vreshetiuk\work\index_libs\build\compile_commands.json --db index_libs.db
+# Для C++20 модулей (без libclang)
+cargo run -p symgraph-cli -- scan-modules --root C:\Users\vreshetiuk\work\index_libs --db index_libs.db
+
+# 4. Если есть C++20 модули
+cargo run -p symgraph-cli -- import-modules --root C:\Users\vreshetiuk\work\index_libs --db index_libs.db
+
+# 5. Запрос (пример)
+cargo run -p symgraph-cli -- query-calls --db index_libs.db --usr "c:@F@main#"
