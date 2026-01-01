@@ -5,6 +5,7 @@ members = [
   "crates/symgraph-core",
   "crates/symgraph-discovery",
   "crates/symgraph-cxx",
-  "crates/symgraph-rust"
+  "crates/symgraph-rust",
+  "crates/symgraph-models"
 ]
 resolver = "2"

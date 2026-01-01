@@ -19,11 +19,11 @@
 //! Парсит XML файлы проекта для извлечения настроек компиляции,
 //! или использует clang-cl совместимые флаги.
 
-use anyhow::{Result, Context, bail};
+use anyhow::{bail, Context, Result};
 use serde::Serialize;
+use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
-use std::fs;
 
 /// Тип системы сборки, обнаруженной в проекте
 #[derive(Debug, Clone, PartialEq)]
@@ -67,7 +67,7 @@ pub fn detect_build_system(project_dir: &Path) -> BuildSystem {
     if project_dir.join("CMakeLists.txt").exists() {
         return BuildSystem::CMake;
     }
-    
+
     // Проверяем .sln файлы (Visual Studio Solution)
     if let Ok(entries) = fs::read_dir(project_dir) {
         for entry in entries.filter_map(|e| e.ok()) {
@@ -82,14 +82,14 @@ pub fn detect_build_system(project_dir: &Path) -> BuildSystem {
             }
         }
     }
-    
+
     // Проверяем Makefile (разные варианты имён)
     for makefile in &["Makefile", "makefile", "GNUmakefile"] {
         if project_dir.join(makefile).exists() {
             return BuildSystem::Make;
         }
     }
-    
+
     BuildSystem::Unknown
 }
 
@@ -115,32 +115,35 @@ pub fn generate_from_cmake(
     // Создаём директорию сборки
     fs::create_dir_all(build_dir)
         .with_context(|| format!("Failed to create build directory: {}", build_dir.display()))?;
-    
+
     // Формируем команду CMake
     let mut cmd = Command::new("cmake");
-    cmd.arg("-S").arg(source_dir)
-       .arg("-B").arg(build_dir)
-       .arg("-DCMAKE_EXPORT_COMPILE_COMMANDS=ON");
-    
+    cmd.arg("-S")
+        .arg(source_dir)
+        .arg("-B")
+        .arg(build_dir)
+        .arg("-DCMAKE_EXPORT_COMPILE_COMMANDS=ON");
+
     // Добавляем генератор если указан (рекомендуется Ninja)
     if let Some(gen) = generator {
         cmd.arg("-G").arg(gen);
     }
-    
+
     // Добавляем дополнительные аргументы
     for arg in extra_args {
         cmd.arg(arg);
     }
-    
+
     // Запускаем CMake
-    let output = cmd.output()
+    let output = cmd
+        .output()
         .with_context(|| "Failed to execute cmake. Is CMake installed and in PATH?")?;
-    
+
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr);
         bail!("CMake configuration failed:\n{}", stderr);
     }
-    
+
     // Проверяем что compile_commands.json создан
     let compdb_path = build_dir.join("compile_commands.json");
     if !compdb_path.exists() {
@@ -150,7 +153,7 @@ pub fn generate_from_cmake(
              Visual Studio generators do not support CMAKE_EXPORT_COMPILE_COMMANDS."
         );
     }
-    
+
     Ok(compdb_path)
 }
 
@@ -176,26 +179,27 @@ pub fn generate_from_makefile(
     // Запускаем make -n (dry-run) для получения команд без выполнения
     let mut cmd = Command::new("make");
     cmd.current_dir(makefile_dir)
-       .arg("-n")  // Dry-run: печатает команды без выполнения
-       .arg("-w"); // Print working directory
-    
+        .arg("-n") // Dry-run: печатает команды без выполнения
+        .arg("-w"); // Print working directory
+
     for arg in make_args {
         cmd.arg(arg);
     }
-    
-    let output = cmd.output()
+
+    let output = cmd
+        .output()
         .with_context(|| "Failed to execute make. Is make installed and in PATH?")?;
-    
+
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr);
         bail!("make -n failed:\n{}", stderr);
     }
-    
+
     let stdout = String::from_utf8_lossy(&output.stdout);
-    
+
     // Парсим вывод make для извлечения команд компиляции
     let entries = parse_make_dry_run(&stdout, makefile_dir)?;
-    
+
     if entries.is_empty() {
         bail!(
             "No compilation commands found in make output. \
@@ -204,29 +208,28 @@ pub fn generate_from_makefile(
              bear -- make"
         );
     }
-    
+
     // Записываем compile_commands.json
     write_compile_commands(&entries, output_path)?;
-    
+
     Ok(output_path.to_path_buf())
 }
 
 /// Парсит вывод `make -n` для извлечения команд компиляции
 fn parse_make_dry_run(output: &str, working_dir: &Path) -> Result<Vec<CompileCommandEntry>> {
     use regex::Regex;
-    
+
     let mut entries = Vec::new();
     let mut current_dir = working_dir.to_path_buf();
-    
+
     // Регулярное выражение для поиска команд компиляции C/C++
     // Ищем вызовы gcc, g++, clang, clang++, cc, c++ с флагом -c
-    let compile_re = Regex::new(
-        r"(?:gcc|g\+\+|clang|clang\+\+|cc|c\+\+|cl|cl\.exe)\s+.*\s+-c\s+(\S+)"
-    )?;
-    
+    let compile_re =
+        Regex::new(r"(?:gcc|g\+\+|clang|clang\+\+|cc|c\+\+|cl|cl\.exe)\s+.*\s+-c\s+(\S+)")?;
+
     // Регулярное выражение для отслеживания смены директории
     let dir_re = Regex::new(r#"make\[\d+\]: Entering directory ['"](.+)['"]"#)?;
-    
+
     for line in output.lines() {
         // Отслеживаем смену директории
         if let Some(caps) = dir_re.captures(line) {
@@ -235,7 +238,7 @@ fn parse_make_dry_run(output: &str, working_dir: &Path) -> Result<Vec<CompileCom
             }
             continue;
         }
-        
+
         // Ищем команды компиляции
         if let Some(caps) = compile_re.captures(line) {
             if let Some(source_file) = caps.get(1) {
@@ -244,11 +247,14 @@ fn parse_make_dry_run(output: &str, working_dir: &Path) -> Result<Vec<CompileCom
                 } else {
                     current_dir.join(source_file.as_str())
                 };
-                
+
                 // Проверяем что это C/C++ файл
                 if let Some(ext) = file_path.extension() {
                     let ext_str = ext.to_string_lossy().to_lowercase();
-                    if matches!(ext_str.as_str(), "c" | "cc" | "cpp" | "cxx" | "c++" | "m" | "mm") {
+                    if matches!(
+                        ext_str.as_str(),
+                        "c" | "cc" | "cpp" | "cxx" | "c++" | "m" | "mm"
+                    ) {
                         entries.push(CompileCommandEntry {
                             directory: current_dir.to_string_lossy().to_string(),
                             file: file_path.to_string_lossy().to_string(),
@@ -260,7 +266,7 @@ fn parse_make_dry_run(output: &str, working_dir: &Path) -> Result<Vec<CompileCom
             }
         }
     }
-    
+
     Ok(entries)
 }
 
@@ -288,18 +294,19 @@ pub fn generate_from_vcxproj(
 ) -> Result<PathBuf> {
     let content = fs::read_to_string(vcxproj_path)
         .with_context(|| format!("Failed to read {}", vcxproj_path.display()))?;
-    
-    let project_dir = vcxproj_path.parent()
+
+    let project_dir = vcxproj_path
+        .parent()
         .ok_or_else(|| anyhow::anyhow!("Invalid vcxproj path"))?;
-    
+
     let entries = parse_vcxproj(&content, project_dir, configuration, platform)?;
-    
+
     if entries.is_empty() {
         bail!("No C/C++ source files found in {}", vcxproj_path.display());
     }
-    
+
     write_compile_commands(&entries, output_path)?;
-    
+
     Ok(output_path.to_path_buf())
 }
 
@@ -308,63 +315,71 @@ fn parse_vcxproj(
     content: &str,
     project_dir: &Path,
     configuration: &str,
-    _platform: &str,  // TODO: использовать для фильтрации по платформе
+    _platform: &str, // TODO: использовать для фильтрации по платформе
 ) -> Result<Vec<CompileCommandEntry>> {
     use regex::Regex;
-    
+
     let mut entries = Vec::new();
-    
+
     // Ищем ClCompile элементы (исходные файлы)
     let compile_re = Regex::new(r#"<ClCompile\s+Include="([^"]+)""#)?;
-    
+
     // Ищем AdditionalIncludeDirectories
-    let include_re = Regex::new(r#"<AdditionalIncludeDirectories>([^<]+)</AdditionalIncludeDirectories>"#)?;
-    
+    let include_re =
+        Regex::new(r#"<AdditionalIncludeDirectories>([^<]+)</AdditionalIncludeDirectories>"#)?;
+
     // Ищем PreprocessorDefinitions
     let define_re = Regex::new(r#"<PreprocessorDefinitions>([^<]+)</PreprocessorDefinitions>"#)?;
-    
+
     // Извлекаем include директории
-    let includes: Vec<String> = include_re.captures_iter(content)
+    let includes: Vec<String> = include_re
+        .captures_iter(content)
         .filter_map(|cap| cap.get(1))
         .flat_map(|m| m.as_str().split(';'))
         .filter(|s| !s.is_empty() && !s.starts_with('%'))
-        .map(|s| format!("-I{}", s.replace("$(ProjectDir)", &project_dir.to_string_lossy())))
+        .map(|s| {
+            format!(
+                "-I{}",
+                s.replace("$(ProjectDir)", &project_dir.to_string_lossy())
+            )
+        })
         .collect();
-    
+
     // Извлекаем препроцессорные определения
-    let defines: Vec<String> = define_re.captures_iter(content)
+    let defines: Vec<String> = define_re
+        .captures_iter(content)
         .filter_map(|cap| cap.get(1))
         .flat_map(|m| m.as_str().split(';'))
         .filter(|s| !s.is_empty() && !s.starts_with('%'))
         .map(|s| format!("-D{}", s))
         .collect();
-    
+
     // Формируем базовые аргументы clang-cl
     let mut base_args = vec![
         "clang-cl".to_string(),
-        format!("/D_{}",  configuration.to_uppercase()),
+        format!("/D_{}", configuration.to_uppercase()),
     ];
     base_args.extend(includes);
     base_args.extend(defines);
     base_args.push("-c".to_string());
-    
+
     // Извлекаем исходные файлы
     for cap in compile_re.captures_iter(content) {
         if let Some(file_match) = cap.get(1) {
             let file_path = file_match.as_str();
-            
+
             // Пропускаем файлы с условной компиляцией для других конфигураций
             // (упрощённая логика, полный парсинг требует XML парсер)
-            
+
             let full_path = if Path::new(file_path).is_absolute() {
                 PathBuf::from(file_path)
             } else {
                 project_dir.join(file_path)
             };
-            
+
             let mut args = base_args.clone();
             args.push(full_path.to_string_lossy().to_string());
-            
+
             entries.push(CompileCommandEntry {
                 directory: project_dir.to_string_lossy().to_string(),
                 file: full_path.to_string_lossy().to_string(),
@@ -373,7 +388,7 @@ fn parse_vcxproj(
             });
         }
     }
-    
+
     Ok(entries)
 }
 
@@ -394,26 +409,27 @@ pub fn generate_from_solution(
     platform: &str,
 ) -> Result<PathBuf> {
     use regex::Regex;
-    
+
     let content = fs::read_to_string(sln_path)
         .with_context(|| format!("Failed to read {}", sln_path.display()))?;
-    
-    let sln_dir = sln_path.parent()
+
+    let sln_dir = sln_path
+        .parent()
         .ok_or_else(|| anyhow::anyhow!("Invalid solution path"))?;
-    
+
     // Ищем все .vcxproj проекты в решении
     let project_re = Regex::new(r#"Project\([^)]+\)\s*=\s*"[^"]+",\s*"([^"]+\.vcxproj)""#)?;
-    
+
     let mut all_entries = Vec::new();
-    
+
     for cap in project_re.captures_iter(&content) {
         if let Some(proj_match) = cap.get(1) {
             let proj_path = sln_dir.join(proj_match.as_str().replace("\\", "/"));
-            
+
             if proj_path.exists() {
                 let proj_content = fs::read_to_string(&proj_path)?;
                 let proj_dir = proj_path.parent().unwrap_or(sln_dir);
-                
+
                 match parse_vcxproj(&proj_content, proj_dir, configuration, platform) {
                     Ok(entries) => all_entries.extend(entries),
                     Err(e) => eprintln!("Warning: Failed to parse {}: {}", proj_path.display(), e),
@@ -421,28 +437,31 @@ pub fn generate_from_solution(
             }
         }
     }
-    
+
     if all_entries.is_empty() {
-        bail!("No C/C++ source files found in solution {}", sln_path.display());
+        bail!(
+            "No C/C++ source files found in solution {}",
+            sln_path.display()
+        );
     }
-    
+
     write_compile_commands(&all_entries, output_path)?;
-    
+
     Ok(output_path.to_path_buf())
 }
 
 /// Записывает compile_commands.json в файл
 fn write_compile_commands(entries: &[CompileCommandEntry], output_path: &Path) -> Result<()> {
     let json = serde_json::to_string_pretty(entries)?;
-    
+
     // Создаём директорию если не существует
     if let Some(parent) = output_path.parent() {
         fs::create_dir_all(parent)?;
     }
-    
+
     fs::write(output_path, json)
         .with_context(|| format!("Failed to write {}", output_path.display()))?;
-    
+
     Ok(())
 }
 
@@ -461,16 +480,14 @@ pub fn generate_compile_commands(
     build_dir: Option<&Path>,
 ) -> Result<PathBuf> {
     let build_system = detect_build_system(project_dir);
-    
+
     match build_system {
         BuildSystem::CMake => {
             let default_build = project_dir.join("build");
             let build = build_dir.unwrap_or(&default_build);
             generate_from_cmake(project_dir, build, Some("Ninja"), &[])
         }
-        BuildSystem::Make => {
-            generate_from_makefile(project_dir, output_path, &[])
-        }
+        BuildSystem::Make => generate_from_makefile(project_dir, output_path, &[]),
         BuildSystem::VcxProj => {
             // Находим первый .vcxproj файл
             let vcxproj = find_file_with_extension(project_dir, "vcxproj")?;
@@ -506,12 +523,12 @@ fn find_file_with_extension(dir: &Path, ext: &str) -> Result<PathBuf> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    
+
     #[test]
     fn test_detect_build_system_cmake() {
         // Тест требует временной директории, пропускаем в unit tests
     }
-    
+
     #[test]
     fn test_parse_make_dry_run() {
         let output = r#"
@@ -525,7 +542,7 @@ make[1]: Leaving directory '/home/user/project'
         assert!(entries[0].file.contains("main.c"));
         assert!(entries[1].file.contains("app.cpp"));
     }
-    
+
     #[test]
     fn test_parse_vcxproj_basic() {
         let vcxproj = r#"

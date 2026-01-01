@@ -4,7 +4,7 @@
 		{
 			"label": "cargo build",
 			"type": "shell",
-			"command": "C:\\Users\\vreshetiuk\\.cargo\\bin\\cargo.exe",
+			"command": "cargo",
 			"args": ["build"],
 			"isBackground": false,
 			"problemMatcher": ["$rustc"],
@@ -16,7 +16,7 @@
 		{
 			"label": "cargo check",
 			"type": "shell",
-			"command": "C:\\Users\\vreshetiuk\\.cargo\\bin\\cargo.exe",
+			"command": "cargo",
 			"args": ["check"],
 			"isBackground": false,
 			"problemMatcher": ["$rustc"],

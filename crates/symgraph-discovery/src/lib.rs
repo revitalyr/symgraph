@@ -1,4 +1,3 @@
-
 //! # symgraph-discovery
 //!
 //! Модуль для обнаружения и загрузки информации о проектах C/C++.
@@ -15,14 +14,8 @@ use serde::Deserialize;
 
 // Реэкспорт основных типов и функций из модуля generate
 pub use generate::{
-    BuildSystem,
-    CompileCommandEntry,
-    detect_build_system,
-    generate_compile_commands,
-    generate_from_cmake,
-    generate_from_makefile,
-    generate_from_vcxproj,
-    generate_from_solution,
+    detect_build_system, generate_compile_commands, generate_from_cmake, generate_from_makefile,
+    generate_from_solution, generate_from_vcxproj, BuildSystem, CompileCommandEntry,
 };
 
 #[derive(Debug, Deserialize)]
@@ -83,7 +76,7 @@ mod tests {
         assert_eq!(cmds.len(), 1);
         assert!(cmds[0].command.is_none());
         assert!(cmds[0].arguments.is_some());
-        
+
         let args = cmds[0].arguments.as_ref().unwrap();
         assert!(args.contains(&"clang++".to_string()));
         assert!(args.contains(&"-std=c++20".to_string()));
@@ -113,7 +106,7 @@ mod tests {
 
         let cmds = parse_compile_commands(json).unwrap();
         assert_eq!(cmds.len(), 3);
-        
+
         let files: Vec<&str> = cmds.iter().map(|c| c.file.as_str()).collect();
         assert!(files.contains(&"/src/main.cpp"));
         assert!(files.contains(&"/src/utils.cpp"));

@@ -1,40 +1,15 @@
-
 use anyhow::Result;
 use regex::Regex;
 use std::fs;
 
-/// Information about a C++20 module
-pub struct ModuleInfo {
-    pub name: String,
-    pub path: String,
-    pub imports: Vec<String>,
-}
+// Shared models
+use symgraph_models::{
+    ModuleAnalysis, ModuleInfo, Relation as GenericRelation, Symbol as GenericSymbol,
+};
 
-/// A symbol extracted from C++ source code
-#[derive(Debug, Clone)]
-pub struct CppSymbol {
-    pub name: String,
-    pub kind: String,          // "function", "class", "struct", "enum", "variable", "typedef"
-    pub signature: String,     // Full signature for functions
-    pub is_exported: bool,
-    pub line: u32,
-}
-
-/// A relationship between symbols
-#[derive(Debug, Clone)]
-pub struct CppRelation {
-    pub from_name: String,
-    pub to_name: String,
-    pub kind: String,  // "call", "member", "inherit", "type_ref"
-}
-
-/// Extended module information with symbols
-pub struct ModuleAnalysis {
-    pub info: ModuleInfo,
-    pub symbols: Vec<CppSymbol>,
-    pub relations: Vec<CppRelation>,
-}
-
+// Backwards-compatible aliases for existing code
+pub type CppSymbol = GenericSymbol;
+pub type CppRelation = GenericRelation;
 pub fn scan_cpp20_module(file_path: &str) -> Result<Option<ModuleInfo>> {
     let text = fs::read_to_string(file_path)?;
     let re_export = Regex::new(r#"(?m)^\s*export\s+module\s+([A-Za-z0-9_:.]+)\s*;"#)?;
@@ -42,10 +17,15 @@ pub fn scan_cpp20_module(file_path: &str) -> Result<Option<ModuleInfo>> {
 
     if let Some(cap) = re_export.captures(&text) {
         let name = cap.get(1).unwrap().as_str().to_string();
-        let imports = re_import.captures_iter(&text)
+        let imports = re_import
+            .captures_iter(&text)
             .filter_map(|m| m.get(1).map(|s| s.as_str().to_string()))
             .collect();
-        Ok(Some(ModuleInfo { name, path: file_path.to_string(), imports }))
+        Ok(Some(ModuleInfo {
+            name,
+            path: file_path.to_string(),
+            imports,
+        }))
     } else {
         Ok(None)
     }
@@ -58,10 +38,15 @@ pub fn scan_cpp20_module_from_text(text: &str, path: &str) -> Option<ModuleInfo>
 
     if let Some(cap) = re_export.captures(text) {
         let name = cap.get(1).unwrap().as_str().to_string();
-        let imports = re_import.captures_iter(text)
+        let imports = re_import
+            .captures_iter(text)
             .filter_map(|m| m.get(1).map(|s| s.as_str().to_string()))
             .collect();
-        Some(ModuleInfo { name, path: path.to_string(), imports })
+        Some(ModuleInfo {
+            name,
+            path: path.to_string(),
+            imports,
+        })
     } else {
         None
     }
@@ -78,42 +63,43 @@ pub fn analyze_cpp_module_from_text(text: &str, path: &str) -> Result<Option<Mod
     // First check if it's a module
     let re_export_module = Regex::new(r#"(?m)^\s*export\s+module\s+([A-Za-z0-9_:.]+)\s*;"#)?;
     let re_import = Regex::new(r#"(?m)^\s*import\s+([A-Za-z0-9_:.]+)\s*;"#)?;
-    
+
     let module_name = if let Some(cap) = re_export_module.captures(text) {
         cap.get(1).unwrap().as_str().to_string()
     } else {
         return Ok(None);
     };
-    
-    let imports: Vec<String> = re_import.captures_iter(text)
+
+    let imports: Vec<String> = re_import
+        .captures_iter(text)
         .filter_map(|m| m.get(1).map(|s| s.as_str().to_string()))
         .collect();
-    
+
     // Remove comments and strings for cleaner parsing
     let clean_text = remove_comments_and_strings(text);
-    
+
     let mut symbols = Vec::new();
     let mut relations = Vec::new();
-    
+
     // Track current context for member detection
     let mut current_class: Option<String> = None;
-    
+
     // Parse line by line with context
     for (line_num, line) in clean_text.lines().enumerate() {
         let line_num = (line_num + 1) as u32;
         let trimmed = line.trim();
-        
+
         // Skip empty lines
         if trimmed.is_empty() {
             continue;
         }
-        
+
         // Detect class/struct end
         if trimmed.starts_with("};") || trimmed == "}" {
             current_class = None;
             continue;
         }
-        
+
         // Detect exported functions (free functions)
         if let Some(func) = parse_exported_function(trimmed) {
             symbols.push(CppSymbol {
@@ -123,7 +109,7 @@ pub fn analyze_cpp_module_from_text(text: &str, path: &str) -> Result<Option<Mod
                 is_exported: true,
                 line: line_num,
             });
-            
+
             // Extract calls from function body would need more context
             // For now, we detect type references in parameters
             for type_ref in &func.2 {
@@ -134,17 +120,22 @@ pub fn analyze_cpp_module_from_text(text: &str, path: &str) -> Result<Option<Mod
                 });
             }
         }
-        
+
         // Detect exported classes/structs
         if let Some((class_name, base_classes)) = parse_exported_class(trimmed) {
             symbols.push(CppSymbol {
                 name: class_name.clone(),
-                kind: if trimmed.contains("struct") { "struct" } else { "class" }.to_string(),
+                kind: if trimmed.contains("struct") {
+                    "struct"
+                } else {
+                    "class"
+                }
+                .to_string(),
                 signature: trimmed.to_string(),
                 is_exported: true,
                 line: line_num,
             });
-            
+
             // Inheritance relations
             for base in base_classes {
                 relations.push(CppRelation {
@@ -153,10 +144,10 @@ pub fn analyze_cpp_module_from_text(text: &str, path: &str) -> Result<Option<Mod
                     kind: "inherit".to_string(),
                 });
             }
-            
+
             current_class = Some(class_name);
         }
-        
+
         // Detect member functions inside a class
         if let Some(ref class_name) = current_class {
             if let Some((method_name, signature, type_refs)) = parse_member_function(trimmed) {
@@ -167,13 +158,13 @@ pub fn analyze_cpp_module_from_text(text: &str, path: &str) -> Result<Option<Mod
                     is_exported: true,
                     line: line_num,
                 });
-                
+
                 relations.push(CppRelation {
                     from_name: method_name.clone(),
                     to_name: class_name.clone(),
                     kind: "member".to_string(),
                 });
-                
+
                 for type_ref in type_refs {
                     relations.push(CppRelation {
                         from_name: format!("{}::{}", class_name, method_name),
@@ -182,7 +173,7 @@ pub fn analyze_cpp_module_from_text(text: &str, path: &str) -> Result<Option<Mod
                     });
                 }
             }
-            
+
             // Detect member variables
             if let Some((var_name, var_type)) = parse_member_variable(trimmed) {
                 let full_name = format!("{}::{}", class_name, var_name);
@@ -193,13 +184,13 @@ pub fn analyze_cpp_module_from_text(text: &str, path: &str) -> Result<Option<Mod
                     is_exported: true,
                     line: line_num,
                 });
-                
+
                 relations.push(CppRelation {
                     from_name: var_name,
                     to_name: class_name.clone(),
                     kind: "member".to_string(),
                 });
-                
+
                 relations.push(CppRelation {
                     from_name: full_name,
                     to_name: var_type,
@@ -207,7 +198,7 @@ pub fn analyze_cpp_module_from_text(text: &str, path: &str) -> Result<Option<Mod
                 });
             }
         }
-        
+
         // Detect exported enums
         if let Some(enum_name) = parse_exported_enum(trimmed) {
             symbols.push(CppSymbol {
@@ -218,7 +209,7 @@ pub fn analyze_cpp_module_from_text(text: &str, path: &str) -> Result<Option<Mod
                 line: line_num,
             });
         }
-        
+
         // Detect exported typedefs/using
         if let Some((alias_name, original_type)) = parse_exported_typedef(trimmed) {
             symbols.push(CppSymbol {
@@ -228,14 +219,14 @@ pub fn analyze_cpp_module_from_text(text: &str, path: &str) -> Result<Option<Mod
                 is_exported: true,
                 line: line_num,
             });
-            
+
             relations.push(CppRelation {
                 from_name: alias_name,
                 to_name: original_type,
                 kind: "type_ref".to_string(),
             });
         }
-        
+
         // Detect exported variables/constants
         if let Some((var_name, var_type)) = parse_exported_variable(trimmed) {
             symbols.push(CppSymbol {
@@ -245,7 +236,7 @@ pub fn analyze_cpp_module_from_text(text: &str, path: &str) -> Result<Option<Mod
                 is_exported: true,
                 line: line_num,
             });
-            
+
             relations.push(CppRelation {
                 from_name: var_name,
                 to_name: var_type,
@@ -253,7 +244,7 @@ pub fn analyze_cpp_module_from_text(text: &str, path: &str) -> Result<Option<Mod
             });
         }
     }
-    
+
     Ok(Some(ModuleAnalysis {
         info: ModuleInfo {
             name: module_name,
@@ -269,7 +260,7 @@ pub fn analyze_cpp_module_from_text(text: &str, path: &str) -> Result<Option<Mod
 fn remove_comments_and_strings(text: &str) -> String {
     let mut result = String::with_capacity(text.len());
     let mut chars = text.chars().peekable();
-    
+
     while let Some(c) = chars.next() {
         match c {
             '/' => {
@@ -326,7 +317,7 @@ fn remove_comments_and_strings(text: &str) -> String {
             _ => result.push(c),
         }
     }
-    
+
     result
 }
 
@@ -336,22 +327,22 @@ fn parse_exported_function(line: &str) -> Option<(String, String, Vec<String>)> 
     let re = Regex::new(
         r#"^\s*export\s+(?:inline\s+)?(?:constexpr\s+)?(?:static\s+)?([A-Za-z_][A-Za-z0-9_:<>,\s\*&]*?)\s+([A-Za-z_][A-Za-z0-9_]*)\s*\(([^)]*)\)"#
     ).ok()?;
-    
+
     if let Some(caps) = re.captures(line) {
         let return_type = caps.get(1)?.as_str().trim().to_string();
         let name = caps.get(2)?.as_str().to_string();
         let params = caps.get(3)?.as_str();
-        
+
         // Extract type references from parameters
         let type_refs = extract_types_from_params(params);
-        
+
         let signature = format!("{} {}({})", return_type, name, params);
-        
+
         // Skip if it looks like a class/struct definition
         if return_type == "class" || return_type == "struct" || return_type == "enum" {
             return None;
         }
-        
+
         Some((name, signature, type_refs))
     } else {
         None
@@ -361,21 +352,25 @@ fn parse_exported_function(line: &str) -> Option<(String, String, Vec<String>)> 
 /// Parse exported class/struct: export class/struct Name : public Base {
 fn parse_exported_class(line: &str) -> Option<(String, Vec<String>)> {
     let re = Regex::new(
-        r#"^\s*export\s+(?:class|struct)\s+([A-Za-z_][A-Za-z0-9_]*)\s*(?::\s*(.+?))?\s*\{"#
-    ).ok()?;
-    
+        r#"^\s*export\s+(?:class|struct)\s+([A-Za-z_][A-Za-z0-9_]*)\s*(?::\s*(.+?))?\s*\{"#,
+    )
+    .ok()?;
+
     if let Some(caps) = re.captures(line) {
         let name = caps.get(1)?.as_str().to_string();
         let base_classes = if let Some(bases) = caps.get(2) {
             // Parse base classes: public Base1, protected Base2
-            let re_base = Regex::new(r#"(?:public|protected|private)?\s*([A-Za-z_][A-Za-z0-9_:<>]*)"#).ok()?;
-            re_base.captures_iter(bases.as_str())
+            let re_base =
+                Regex::new(r#"(?:public|protected|private)?\s*([A-Za-z_][A-Za-z0-9_:<>]*)"#)
+                    .ok()?;
+            re_base
+                .captures_iter(bases.as_str())
                 .filter_map(|c| c.get(1).map(|m| m.as_str().to_string()))
                 .collect()
         } else {
             Vec::new()
         };
-        
+
         Some((name, base_classes))
     } else {
         None
@@ -388,20 +383,20 @@ fn parse_member_function(line: &str) -> Option<(String, String, Vec<String>)> {
     let re = Regex::new(
         r#"^\s*(?:virtual\s+)?(?:static\s+)?(?:inline\s+)?(?:constexpr\s+)?([A-Za-z_][A-Za-z0-9_:<>,\s\*&]*?)\s+([A-Za-z_][A-Za-z0-9_]*)\s*\(([^)]*)\)"#
     ).ok()?;
-    
+
     if let Some(caps) = re.captures(line) {
         let return_type = caps.get(1)?.as_str().trim();
         let name = caps.get(2)?.as_str().to_string();
         let params = caps.get(3)?.as_str();
-        
+
         // Skip constructors/destructors (no return type, name matches class)
         if return_type.is_empty() || return_type == "explicit" || name.starts_with('~') {
             return None;
         }
-        
+
         let type_refs = extract_types_from_params(params);
         let signature = format!("{} {}({})", return_type, name, params);
-        
+
         Some((name, signature, type_refs))
     } else {
         None
@@ -411,25 +406,33 @@ fn parse_member_function(line: &str) -> Option<(String, String, Vec<String>)> {
 /// Parse member variable: Type name;
 fn parse_member_variable(line: &str) -> Option<(String, String)> {
     // Skip function declarations and access specifiers
-    if line.contains('(') || line.contains("public:") || 
-       line.contains("private:") || line.contains("protected:") ||
-       line.starts_with("//") || line.starts_with("/*") {
+    if line.contains('(')
+        || line.contains("public:")
+        || line.contains("private:")
+        || line.contains("protected:")
+        || line.starts_with("//")
+        || line.starts_with("/*")
+    {
         return None;
     }
-    
+
     let re = Regex::new(
         r#"^\s*(?:mutable\s+)?(?:static\s+)?(?:const\s+)?([A-Za-z_][A-Za-z0-9_:<>,\s\*&]*?)\s+([A-Za-z_][A-Za-z0-9_]*)\s*(?:=.*)?;"#
     ).ok()?;
-    
+
     if let Some(caps) = re.captures(line) {
         let var_type = caps.get(1)?.as_str().trim().to_string();
         let name = caps.get(2)?.as_str().to_string();
-        
+
         // Skip if type looks like a keyword
-        if ["return", "if", "else", "while", "for", "switch", "case", "break", "continue"].contains(&var_type.as_str()) {
+        if [
+            "return", "if", "else", "while", "for", "switch", "case", "break", "continue",
+        ]
+        .contains(&var_type.as_str())
+        {
             return None;
         }
-        
+
         Some((name, var_type))
     } else {
         None
@@ -439,27 +442,30 @@ fn parse_member_variable(line: &str) -> Option<(String, String)> {
 /// Parse exported enum
 fn parse_exported_enum(line: &str) -> Option<String> {
     let re = Regex::new(r#"^\s*export\s+enum\s+(?:class\s+)?([A-Za-z_][A-Za-z0-9_]*)"#).ok()?;
-    re.captures(line).and_then(|c| c.get(1).map(|m| m.as_str().to_string()))
+    re.captures(line)
+        .and_then(|c| c.get(1).map(|m| m.as_str().to_string()))
 }
 
 /// Parse exported typedef/using
 fn parse_exported_typedef(line: &str) -> Option<(String, String)> {
     // using Alias = Type;
-    let re_using = Regex::new(r#"^\s*export\s+using\s+([A-Za-z_][A-Za-z0-9_]*)\s*=\s*(.+?)\s*;"#).ok()?;
+    let re_using =
+        Regex::new(r#"^\s*export\s+using\s+([A-Za-z_][A-Za-z0-9_]*)\s*=\s*(.+?)\s*;"#).ok()?;
     if let Some(caps) = re_using.captures(line) {
         let alias = caps.get(1)?.as_str().to_string();
         let original = caps.get(2)?.as_str().trim().to_string();
         return Some((alias, original));
     }
-    
+
     // typedef Type Alias;
-    let re_typedef = Regex::new(r#"^\s*export\s+typedef\s+(.+?)\s+([A-Za-z_][A-Za-z0-9_]*)\s*;"#).ok()?;
+    let re_typedef =
+        Regex::new(r#"^\s*export\s+typedef\s+(.+?)\s+([A-Za-z_][A-Za-z0-9_]*)\s*;"#).ok()?;
     if let Some(caps) = re_typedef.captures(line) {
         let original = caps.get(1)?.as_str().trim().to_string();
         let alias = caps.get(2)?.as_str().to_string();
         return Some((alias, original));
     }
-    
+
     None
 }
 
@@ -469,21 +475,21 @@ fn parse_exported_variable(line: &str) -> Option<(String, String)> {
     let re = Regex::new(
         r#"^\s*export\s+(?:inline\s+)?(?:constexpr\s+)?(?:const\s+)?([A-Za-z_][A-Za-z0-9_:<>,\s\*&]*?)\s+([A-Za-z_][A-Za-z0-9_]*)\s*(?:=.*)?;"#
     ).ok()?;
-    
+
     if let Some(caps) = re.captures(line) {
         let var_type = caps.get(1)?.as_str().trim();
         let name = caps.get(2)?.as_str().to_string();
-        
+
         // Skip if it looks like a function
         if line.contains('(') {
             return None;
         }
-        
+
         // Skip class/struct/enum definitions
         if ["class", "struct", "enum", "namespace"].contains(&var_type) {
             return None;
         }
-        
+
         Some((name, var_type.to_string()))
     } else {
         None
@@ -493,7 +499,7 @@ fn parse_exported_variable(line: &str) -> Option<(String, String)> {
 /// Extract type names from parameter list
 fn extract_types_from_params(params: &str) -> Vec<String> {
     let mut types = Vec::new();
-    
+
     // Simple regex to extract type names (before the parameter name)
     let re = Regex::new(r#"([A-Za-z_][A-Za-z0-9_]*(?:::[A-Za-z_][A-Za-z0-9_]*)*)"#).ok();
     if let Some(re) = re {
@@ -501,15 +507,19 @@ fn extract_types_from_params(params: &str) -> Vec<String> {
             if let Some(m) = cap.get(1) {
                 let t = m.as_str();
                 // Skip common keywords and primitive types
-                if !["const", "volatile", "mutable", "int", "char", "bool", "void", 
-                     "float", "double", "long", "short", "unsigned", "signed",
-                     "auto", "decltype", "typename", "class", "struct"].contains(&t) {
+                if ![
+                    "const", "volatile", "mutable", "int", "char", "bool", "void", "float",
+                    "double", "long", "short", "unsigned", "signed", "auto", "decltype",
+                    "typename", "class", "struct",
+                ]
+                .contains(&t)
+                {
                     types.push(t.to_string());
                 }
             }
         }
     }
-    
+
     types
 }
 

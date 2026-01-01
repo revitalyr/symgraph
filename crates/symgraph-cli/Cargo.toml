@@ -18,3 +18,7 @@ symgraph-discovery = { path = "../symgraph-discovery" }
 symgraph-cxx       = { path = "../symgraph-cxx" }
 symgraph-rust      = { path = "../symgraph-rust" }
 clang = { version = "2.0", features = ["clang_10_0"] }
+
+[dev-dependencies]
+tempfile = "3"
+assert_cmd = "2"

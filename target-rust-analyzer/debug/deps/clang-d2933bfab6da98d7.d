@@ -1,0 +1,13 @@
+C:\Users\revit\Projects\symgraph/target-rust-analyzer\debug\deps\clang-d2933bfab6da98d7.d: C:\Users\revit\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\clang-2.0.0\src\lib.rs C:\Users\revit\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\clang-2.0.0\src\utility.rs C:\Users\revit\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\clang-2.0.0\src\completion.rs C:\Users\revit\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\clang-2.0.0\src\diagnostic.rs C:\Users\revit\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\clang-2.0.0\src\documentation.rs C:\Users\revit\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\clang-2.0.0\src\source.rs C:\Users\revit\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\clang-2.0.0\src\token.rs C:\Users\revit\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\clang-2.0.0\src\sonar.rs C:\Users\revit\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\clang-2.0.0\src\error.rs
+
+C:\Users\revit\Projects\symgraph/target-rust-analyzer\debug\deps\libclang-d2933bfab6da98d7.rmeta: C:\Users\revit\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\clang-2.0.0\src\lib.rs C:\Users\revit\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\clang-2.0.0\src\utility.rs C:\Users\revit\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\clang-2.0.0\src\completion.rs C:\Users\revit\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\clang-2.0.0\src\diagnostic.rs C:\Users\revit\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\clang-2.0.0\src\documentation.rs C:\Users\revit\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\clang-2.0.0\src\source.rs C:\Users\revit\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\clang-2.0.0\src\token.rs C:\Users\revit\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\clang-2.0.0\src\sonar.rs C:\Users\revit\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\clang-2.0.0\src\error.rs
+
+C:\Users\revit\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\clang-2.0.0\src\lib.rs:
+C:\Users\revit\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\clang-2.0.0\src\utility.rs:
+C:\Users\revit\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\clang-2.0.0\src\completion.rs:
+C:\Users\revit\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\clang-2.0.0\src\diagnostic.rs:
+C:\Users\revit\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\clang-2.0.0\src\documentation.rs:
+C:\Users\revit\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\clang-2.0.0\src\source.rs:
+C:\Users\revit\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\clang-2.0.0\src\token.rs:
+C:\Users\revit\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\clang-2.0.0\src\sonar.rs:
+C:\Users\revit\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\clang-2.0.0\src\error.rs:
