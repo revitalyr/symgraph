@@ -15,7 +15,7 @@ use serde::Deserialize;
 // Реэкспорт основных типов и функций из модуля generate
 pub use generate::{
     detect_build_system, generate_compile_commands, generate_from_cmake, generate_from_makefile,
-    generate_from_solution, generate_from_vcxproj, BuildSystem, CompileCommandEntry,
+    generate_from_solution, generate_from_vcxproj, generate_from_cargo, BuildSystem, CompileCommandEntry,
 };
 
 #[derive(Debug, Deserialize)]

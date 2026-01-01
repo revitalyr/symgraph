@@ -116,14 +116,19 @@ enum BuildSystemType {
     Vcxproj,
     /// Visual Studio решение (.sln)
     Solution,
+    /// Cargo / Rust проект (Cargo.toml)
+    Cargo,
 }
 
 #[derive(Subcommand)]
 enum Cmd {
     /// Generate compile_commands.json from a build system.
     ///
-    /// Automatically detects the build system (CMake, Make, Visual Studio)
+    /// Automatically detects the build system (CMake, Make, Visual Studio, Cargo)
     /// and generates a compile_commands.json file for use with clang tools.
+    ///
+    /// Note for Cargo projects: this tool will attempt to use `cargo compdb` (from `cargo-compdb`). If it's not available,
+    /// instructions will be printed explaining how to install it or generate `compile_commands.json` manually.
     ///
     /// # Supported build systems
     /// - CMake: runs cmake with CMAKE_EXPORT_COMPILE_COMMANDS=ON
@@ -147,7 +152,7 @@ enum Cmd {
     GenerateCompdb {
         /// Path to project directory containing build files.
         ///
-        /// Should contain CMakeLists.txt, Makefile, .vcxproj, or .sln
+        /// Should contain CMakeLists.txt, Makefile, .vcxproj, .sln, or Cargo.toml
         #[arg(long, value_name = "DIR", default_value = ".")]
         project: String,
 
@@ -392,7 +397,7 @@ fn generate_compdb(
 ) -> Result<()> {
     use symgraph_discovery::{
         detect_build_system, generate_from_cmake, generate_from_makefile, generate_from_solution,
-        generate_from_vcxproj, BuildSystem,
+        generate_from_vcxproj, generate_from_cargo, BuildSystem,
     };
 
     let project_path = Path::new(project);
@@ -404,6 +409,7 @@ fn generate_compdb(
         BuildSystemType::Make => BuildSystem::Make,
         BuildSystemType::Vcxproj => BuildSystem::VcxProj,
         BuildSystemType::Solution => BuildSystem::Solution,
+        BuildSystemType::Cargo => BuildSystem::Cargo,
     };
 
     println!("Detected build system: {:?}", detected_system);
@@ -437,10 +443,17 @@ fn generate_compdb(
             println!("Parsing Visual Studio solution: {}", sln.display());
             generate_from_solution(&sln, output_path, configuration, platform)?
         }
+        BuildSystem::Cargo => {
+            println!("Detected Cargo project in {}. Consider using `compdb` (install via `cargo install compdb`) to generate a compilation database.", project);
+            println!("To generate manually: `compdb -p <build_dir> list > build/compile_commands.json` (where `<build_dir>` is usually `target`). Attempting to use `compdb` now...");
+            // Pass build_dir (if the user supplied it) through to generator; default will be `target`
+            let build_dir_path = build_dir.map(|s| Path::new(s));
+            generate_from_cargo(project_path, output_path, build_dir_path)?
+        }
         BuildSystem::Unknown => {
             anyhow::bail!(
                 "Could not detect build system in '{}'. \n\
-                 Supported: CMakeLists.txt, Makefile, .vcxproj, .sln\n\
+                 Supported: CMakeLists.txt, Makefile, .vcxproj, .sln, Cargo.toml\n\
                  Use --build-system to specify explicitly.",
                 project
             );
