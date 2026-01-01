@@ -535,90 +535,19 @@ fn find_file_with_extension(dir: &Path, ext: &str) -> Result<PathBuf> {
 /// 2) Если субкоманда отсутствует, пытаемся установить `cargo-compdb` через `cargo install cargo-compdb` и повторить.
 ///
 /// Возвращает путь к созданному файлу или ошибку с пояснением.
-pub fn generate_from_cargo(project_dir: &Path, output_path: &Path, build_dir: Option<&Path>) -> Result<PathBuf> {
-    // Prefer standalone `compdb` binary. Allow override via SYGRAPH_COMPDB_CMD (for tests/custom paths)
-    let compdb_bin = std::env::var("SYGRAPH_COMPDB_CMD").unwrap_or_else(|_| "compdb".to_string());
+pub fn generate_from_cargo(project_dir: &Path, output_path: &Path, _build_dir: Option<&Path>) -> Result<PathBuf> {
+    // Prefer `rust-analyzer` for Cargo projects. Allow override via SYGRAPH_RUST_ANALYZER_CMD (for tests/custom paths)
+    let ra_bin = std::env::var("SYGRAPH_RUST_ANALYZER_CMD").unwrap_or_else(|_| "rust-analyzer".to_string());
 
-    // Determine the directory to scan: prefer provided build_dir, otherwise use project_dir/target
-    let scan_dir = if let Some(bd) = build_dir {
-        bd.to_path_buf()
-    } else {
-        project_dir.join("target")
-    };
-
-    // Try running: `compdb -p <scan_dir> list`
-    let mut cmd = Command::new(&compdb_bin);
-    cmd.arg("-p").arg(&scan_dir).arg("list").current_dir(project_dir);
+    // Run: `rust-analyzer lsif .` and write its stdout to the output path (LSIF format)
+    let mut cmd = Command::new(&ra_bin);
+    cmd.arg("lsif").arg(".").current_dir(project_dir);
 
     match cmd.output() {
         Ok(output) => {
             if output.status.success() {
                 let stdout = String::from_utf8(output.stdout)
-                    .with_context(|| "Failed to read stdout from compdb")?;
-
-                // If compdb returned an empty stdout, try alternate invocations (plain list or common build dirs).
-                // Note: a JSON empty array `[]` is valid output, so only fallback when stdout is truly empty.
-                if stdout.trim().is_empty() {
-                    // 1) Try `compdb list`
-                    if let Ok(mut p) = Command::new(&compdb_bin).arg("list").current_dir(project_dir).output() {
-                        if p.status.success() {
-                            let s = String::from_utf8(p.stdout).unwrap_or_default();
-                            if !s.trim().is_empty() && s.trim() != "[]" {
-                                if let Some(parent) = output_path.parent() {
-                                    fs::create_dir_all(parent)?;
-                                }
-                                fs::write(output_path, s)
-                                    .with_context(|| format!("Failed to write {}", output_path.display()))?;
-                                return Ok(output_path.to_path_buf());
-                            }
-                        }
-                    }
-
-                    // 2) Try target/debug
-                    let tdbg = project_dir.join("target").join("debug");
-                    if tdbg.exists() {
-                        if let Ok(mut p) = Command::new(&compdb_bin).arg("-p").arg(tdbg).arg("list").current_dir(project_dir).output() {
-                            if p.status.success() {
-                                let s = String::from_utf8(p.stdout).unwrap_or_default();
-                                if !s.trim().is_empty() && s.trim() != "[]" {
-                                    if let Some(parent) = output_path.parent() {
-                                        fs::create_dir_all(parent)?;
-                                    }
-                                    fs::write(output_path, s)
-                                        .with_context(|| format!("Failed to write {}", output_path.display()))?;
-                                    return Ok(output_path.to_path_buf());
-                                }
-                            }
-                        }
-                    }
-
-                    // 3) Try target
-                    let tgt = project_dir.join("target");
-                    if tgt.exists() {
-                        if let Ok(mut p) = Command::new(&compdb_bin).arg("-p").arg(tgt).arg("list").current_dir(project_dir).output() {
-                            if p.status.success() {
-                                let s = String::from_utf8(p.stdout).unwrap_or_default();
-                                if !s.trim().is_empty() && s.trim() != "[]" {
-                                    if let Some(parent) = output_path.parent() {
-                                        fs::create_dir_all(parent)?;
-                                    }
-                                    fs::write(output_path, s)
-                                        .with_context(|| format!("Failed to write {}", output_path.display()))?;
-                                    return Ok(output_path.to_path_buf());
-                                }
-                            }
-                        }
-                    }
-
-                    // Nothing found
-                    bail!(
-                        "`compdb` produced 0 compile commands. Suggestions:\n\
-                         1) Run `cargo build` to ensure artifacts are present.\n\
-                         2) Provide the build directory explicitly: `symgraph-cli generate-compdb --project . --build-dir <build_dir>` (e.g., `target/debug`).\n\
-                         3) Or generate manually: `compdb -p <build_dir> list > build/compile_commands.json`."
-                    );
-                }
-
+                    .with_context(|| "Failed to read stdout from rust-analyzer")?;
                 if let Some(parent) = output_path.parent() {
                     fs::create_dir_all(parent)?;
                 }
@@ -627,61 +556,11 @@ pub fn generate_from_cargo(project_dir: &Path, output_path: &Path, build_dir: Op
                 return Ok(output_path.to_path_buf());
             } else {
                 let stderr = String::from_utf8_lossy(&output.stderr).to_string();
-
-                // If compdb not found (executable not present), suggest install
-                if stderr.contains("not found") || stderr.contains("No such file") || stderr.contains("is not recognized") {
-                    println!("`compdb` not found: attempting `cargo install compdb`...");
-                    let status = Command::new("cargo")
-                        .arg("install")
-                        .arg("compdb")
-                        .current_dir(project_dir)
-                        .status()
-                        .with_context(|| "Failed to start `cargo install compdb`")?;
-
-                    if !status.success() {
-                        bail!(
-                            "Failed to install `compdb` automatically.\n\
-                             Please install it manually and re-run: `cargo install compdb`\n\
-                             After installation you can generate compile_commands.json with:\n\
-                             `compdb -p <build_dir> list > build/compile_commands.json` (where `<build_dir>` is typically `target`)\n\
-                             or run `symgraph-cli generate-compdb --project . --build-dir build` again to let symgraph invoke it.\n\
-                             Original error: {}",
-                            stderr
-                        );
-                    }
-
-                    // Retry compdb
-                    let retry = Command::new(&compdb_bin).arg("-p").arg(&scan_dir).arg("list").current_dir(project_dir).output()
-                        .with_context(|| "Failed to run `compdb` after installing compdb")?;
-                    if retry.status.success() {
-                        let stdout = String::from_utf8(retry.stdout)
-                            .with_context(|| "Failed to read stdout from compdb (retry)")?;
-                        if let Some(parent) = output_path.parent() {
-                            fs::create_dir_all(parent)?;
-                        }
-                        fs::write(output_path, stdout)
-                            .with_context(|| format!("Failed to write {}", output_path.display()))?;
-                        return Ok(output_path.to_path_buf());
-                    } else {
-                        let err = String::from_utf8_lossy(&retry.stderr);
-                        bail!(
-                            "`compdb` failed even after installing.\n\
-                             You can try generating compile_commands manually:\n\
-                             `compdb -p <build_dir> list > build/compile_commands.json`\n\
-                             or install via `cargo install compdb`.\n\
-                             Details: {}",
-                            err
-                        );
-                    }
-                }
-
-                // Other error from compdb: include actionable guidance
                 bail!(
-                    "`compdb` failed: {}\n\
+                    "`rust-analyzer lsif` failed: {}\n\
                      Suggestions:\n\
-                     1) Install helper: `cargo install compdb` and retry.\n\
-                     2) Or generate manually: `compdb -p <build_dir> list > build/compile_commands.json` and then run `symgraph-cli scan-cxx --compdb build/compile_commands.json --db project.db`.\n\
-                     3) If you use a custom `compdb`, set `SYGRAPH_COMPDB_CMD` to the full path.\n\
+                     1) Ensure `rust-analyzer` is installed and on PATH (install via rustup or from release).\n\
+                     2) Or generate manually: `rust-analyzer lsif . > compile_commands.json` and re-run the command.\n\
                      Original output: {}",
                     stderr,
                     stderr
@@ -689,8 +568,8 @@ pub fn generate_from_cargo(project_dir: &Path, output_path: &Path, build_dir: Op
             }
         }
         Err(e) => bail!(
-            "Failed to run `compdb` (is it installed and on PATH?): {}\n\
-             Install it via `cargo install compdb`.",
+            "Failed to run `rust-analyzer` (is it installed and on PATH?): {}\n\
+             Install it and try again.",
             e
         ),
     }
@@ -750,21 +629,21 @@ make[1]: Leaving directory '/home/user/project'
     }
 
     #[test]
-    fn test_generate_from_cargo_with_mocked_compdb() {
+    fn test_generate_from_cargo_with_mocked_rust_analyzer() {
         // Create temp project with Cargo.toml
         let td = tempdir().expect("tempdir");
         let cargo_toml = td.path().join("Cargo.toml");
         std::fs::write(&cargo_toml, "[package]\nname = \"x\"\nversion = \"0.1.0\"").unwrap();
 
-        // Create a fake 'compdb' in PATH that responds to `compdb -p <dir> list` with []
+        // Create a fake 'rust-analyzer' in PATH that responds to `rust-analyzer lsif .` with []
         let bin_dir = td.path().join("fakebin");
         std::fs::create_dir_all(&bin_dir).unwrap();
 
         #[cfg(windows)]
         {
-            let script = bin_dir.join("compdb.bat");
+            let script = bin_dir.join("rust-analyzer.bat");
             std::fs::write(&script, r#"@echo off
-if "%1"=="-p" (
+if "%1"=="lsif" (
   echo []
   exit /b 0
 )
@@ -775,9 +654,9 @@ exit /b 1
 
         #[cfg(unix)]
         {
-            let script = bin_dir.join("compdb");
+            let script = bin_dir.join("rust-analyzer");
             std::fs::write(&script, r#"#!/bin/sh
-if [ "$1" = "-p" ]; then
+if [ "$1" = "lsif" ]; then
   echo '[]'
   exit 0
 else
@@ -791,10 +670,10 @@ fi
             std::fs::set_permissions(&script, perms).unwrap();
         }
 
-        // Point SYGRAPH_COMPDB_CMD to our fake compdb script
-        let cmd_path = if cfg!(windows) { bin_dir.join("compdb.bat") } else { bin_dir.join("compdb") };
-        let old_cmd = std::env::var("SYGRAPH_COMPDB_CMD").ok();
-        std::env::set_var("SYGRAPH_COMPDB_CMD", cmd_path.as_os_str());
+        // Point SYGRAPH_RUST_ANALYZER_CMD to our fake script
+        let cmd_path = if cfg!(windows) { bin_dir.join("rust-analyzer.bat") } else { bin_dir.join("rust-analyzer") };
+        let old_cmd = std::env::var("SYGRAPH_RUST_ANALYZER_CMD").ok();
+        std::env::set_var("SYGRAPH_RUST_ANALYZER_CMD", cmd_path.as_os_str());
 
         let out = td.path().join("compile_commands.json");
         let res = generate_from_cargo(td.path(), &out, None);
@@ -806,21 +685,21 @@ fi
             }
             Err(e) => {
                 eprintln!("generate_from_cargo error: {}", e);
-                // Restore SYGRAPH_COMPDB_CMD before panic for better environment hygiene
+                // Restore SYGRAPH_RUST_ANALYZER_CMD before panic for better environment hygiene
                 if let Some(v) = old_cmd.as_deref() {
-                    std::env::set_var("SYGRAPH_COMPDB_CMD", v);
+                    std::env::set_var("SYGRAPH_RUST_ANALYZER_CMD", v);
                 } else {
-                    std::env::remove_var("SYGRAPH_COMPDB_CMD");
+                    std::env::remove_var("SYGRAPH_RUST_ANALYZER_CMD");
                 }
                 panic!("generate_from_cargo failed: {}", e);
             }
         }
 
-        // Restore SYGRAPH_COMPDB_CMD
+        // Restore SYGRAPH_RUST_ANALYZER_CMD
         if let Some(v) = old_cmd.as_deref() {
-            std::env::set_var("SYGRAPH_COMPDB_CMD", v);
+            std::env::set_var("SYGRAPH_RUST_ANALYZER_CMD", v);
         } else {
-            std::env::remove_var("SYGRAPH_COMPDB_CMD");
+            std::env::remove_var("SYGRAPH_RUST_ANALYZER_CMD");
         }
     }
 }

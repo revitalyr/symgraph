@@ -444,9 +444,9 @@ fn generate_compdb(
             generate_from_solution(&sln, output_path, configuration, platform)?
         }
         BuildSystem::Cargo => {
-            println!("Detected Cargo project in {}. Consider using `compdb` (install via `cargo install compdb`) to generate a compilation database.", project);
-            println!("To generate manually: `compdb -p <build_dir> list > build/compile_commands.json` (where `<build_dir>` is usually `target`). Attempting to use `compdb` now...");
-            // Pass build_dir (if the user supplied it) through to generator; default will be `target`
+            println!("Detected Cargo project in {}. Using `rust-analyzer lsif` to generate LSIF output.", project);
+            println!("To generate manually: `rust-analyzer lsif . > compile_commands.json`. Attempting to run `rust-analyzer lsif` now...");
+            // Pass build_dir (if the user supplied it) through to generator (currently unused by LSIF flow)
             let build_dir_path = build_dir.map(|s| Path::new(s));
             generate_from_cargo(project_path, output_path, build_dir_path)?
         }

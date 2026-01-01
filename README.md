@@ -79,6 +79,14 @@ cargo run -p symgraph-cli -- generate-compdb --project . --build-system make
 cmake -S . -B build -G "Ninja" -DCMAKE_EXPORT_COMPILE_COMMANDS=ON
 ```
 
+**Option E: Cargo (Rust) project**
+```powershell
+# Use rust-analyzer to export LSIF (supported by symgraph discovery):
+rust-analyzer lsif . > compile_commands.json
+# Or let the CLI attempt it automatically for Cargo projects:
+cargo run -p symgraph-cli -- generate-compdb --project .
+```
+
 ### 2. Analyze C/C++ code
 
 ```powershell
