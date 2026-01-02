@@ -95,7 +95,7 @@ class LegendWidget extends StatelessWidget {
         children: [
           Container(
             width: 40,
-            height: 2,
+            height: width,
             color: color,
           ),
           const SizedBox(width: 8),
@@ -110,4 +110,3 @@ class LegendWidget extends StatelessWidget {
     );
   }
 }
-

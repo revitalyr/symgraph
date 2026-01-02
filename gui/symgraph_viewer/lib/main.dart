@@ -45,16 +45,19 @@ class _DatabaseSelectorPageState extends State<DatabaseSelectorPage> {
 
     final file = File(path);
     if (!await file.exists()) {
+      if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Файл не найден')),
       );
       return;
     }
 
+    if (!mounted) return;
     setState(() {
       _selectedPath = path;
     });
 
+    if (!mounted) return;
     Navigator.push(
       context,
       MaterialPageRoute(
@@ -96,6 +99,8 @@ class _DatabaseSelectorPageState extends State<DatabaseSelectorPage> {
               ),
               child: const Text('Загрузить граф'),
             ),
+            const SizedBox(height: 12),
+            if (_selectedPath != null) Text('Выбранная база: $_selectedPath'),
           ],
         ),
       ),
