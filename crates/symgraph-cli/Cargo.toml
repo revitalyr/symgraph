@@ -13,6 +13,11 @@ rusqlite   = { version = "0.31", features = ["bundled"] }
 shell-words = "1"
 walkdir = "2"
 
+# Rust scanning prototype deps
+cargo_metadata = "0.23"
+syn = { version = "2", features = ["full", "visit"] }
+petgraph = "0.6"
+
 symgraph-core      = { path = "../symgraph-core" }
 symgraph-discovery = { path = "../symgraph-discovery" }
 symgraph-cxx       = { path = "../symgraph-cxx" }

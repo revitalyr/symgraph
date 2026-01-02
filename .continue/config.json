@@ -1,0 +1,22 @@
+{
+  "models": [
+    {
+      "title": "CodeLlama 7B (Ollama)",
+      "provider": "ollama",
+      "model": "codellama:7b",
+      "systemMessage": "You are an expert C++ and Rust developer. Write safe, efficient, idiomatic code. Prefer modern C++ (C++20+) and idiomatic Rust. Explain briefly when needed.",
+      "contextLength": 4096
+    },
+    {
+      "title": "Phi-3.5 Fast (Ollama)",
+      "provider": "ollama",
+      "model": "phi3.5",
+      "systemMessage": "You are a fast assistant for explaining C++ and Rust code clearly and concisely.",
+      "contextLength": 4096
+    }
+  ],
+  "tabAutocompleteModel": {
+    "provider": "ollama",
+    "model": "codellama:7b"
+  }
+}

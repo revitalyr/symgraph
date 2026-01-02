@@ -1,4 +1,10 @@
 Cargo.lock
 
-/**/target
+target/
+target-rust-analyzer/
 index_libs.db
+compile_commands.json
+mydatabase.db
+project.lsif
+sources.json
+sources.txt

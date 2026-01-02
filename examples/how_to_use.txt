@@ -24,8 +24,11 @@ Proceeding to show the exact commands and a couple of common examples to run the
 Показ справки:
 cargo run -p symgraph-cli -- --help
 
-Пример: сгенерировать compdb (если проект в текущей папке):
+Пример: сгенерировать compile_commands.json (C/C++ projects via CMake/Make). For Rust (Cargo) projects use `rust-analyzer lsif . > compile_commands.json`:
+# C/C++ (auto-detect)
 cargo run -p symgraph-cli -- generate-compdb --project . --build-dir build
+# Rust (Cargo)
+rust-analyzer lsif . > compile_commands.json
 
 Пример: просканировать компиляцию и записать в БД:
 cargo run -p symgraph-cli -- scan-cxx --compdb build/compile_commands.json --db project.db
