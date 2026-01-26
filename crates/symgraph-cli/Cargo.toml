@@ -22,6 +22,7 @@ symgraph-core      = { path = "../symgraph-core" }
 symgraph-discovery = { path = "../symgraph-discovery" }
 symgraph-cxx       = { path = "../symgraph-cxx" }
 symgraph-rust      = { path = "../symgraph-rust" }
+symgraph-scripts   = { path = "../symgraph-scripts" }
 clang = { version = "2.0", features = ["clang_10_0"] }
 
 [dev-dependencies]

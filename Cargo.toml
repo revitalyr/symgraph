@@ -6,6 +6,15 @@ members = [
   "crates/symgraph-discovery",
   "crates/symgraph-cxx",
   "crates/symgraph-rust",
-  "crates/symgraph-models"
+  "crates/symgraph-models",
+  "crates/symgraph-scripts"
 ]
 resolver = "2"
+
+[profile.dev]
+opt-level = 0
+codegen-units = 512
+
+[profile.dev.package."*"]
+opt-level = 0
+debug = false

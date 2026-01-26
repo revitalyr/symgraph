@@ -1,17 +1,33 @@
-
 -- SQLite schema for symgraph
+CREATE TABLE IF NOT EXISTS projects (
+  id          INTEGER PRIMARY KEY,
+  name        TEXT NOT NULL,
+  root_path   TEXT NOT NULL,
+  description TEXT,
+  purpose     TEXT,
+  structure   TEXT,
+  dependencies TEXT,
+  created_at  DATETIME DEFAULT CURRENT_TIMESTAMP
+);
+
 CREATE TABLE IF NOT EXISTS modules (
-  id     INTEGER PRIMARY KEY,
-  name   TEXT NOT NULL,
-  kind   TEXT NOT NULL,
-  path   TEXT
+  id         INTEGER PRIMARY KEY,
+  project_id INTEGER,
+  name       TEXT NOT NULL,
+  kind       TEXT NOT NULL,
+  path       TEXT,
+  FOREIGN KEY(project_id) REFERENCES projects(id)
 );
 
 CREATE TABLE IF NOT EXISTS files (
   id        INTEGER PRIMARY KEY,
+  project_id INTEGER,
   module_id INTEGER,
   path      TEXT NOT NULL,
   lang      TEXT NOT NULL,
+  category  TEXT,
+  purpose   TEXT,
+  FOREIGN KEY(project_id) REFERENCES projects(id),
   FOREIGN KEY(module_id) REFERENCES modules(id)
 );
 
@@ -49,3 +65,8 @@ CREATE TABLE IF NOT EXISTS edges (
   FOREIGN KEY(from_module) REFERENCES modules(id),
   FOREIGN KEY(to_module)   REFERENCES modules(id)
 );
+
+CREATE INDEX IF NOT EXISTS idx_files_path ON files(path);
+CREATE INDEX IF NOT EXISTS idx_files_category ON files(category);
+CREATE INDEX IF NOT EXISTS idx_symbols_usr ON symbols(usr);
+CREATE INDEX IF NOT EXISTS idx_edges_kind ON edges(kind);

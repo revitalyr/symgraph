@@ -2,6 +2,100 @@ pub mod modules;
 
 use clang::{Entity, EntityKind, TranslationUnit};
 use serde::Serialize;
+use std::path::Path;
+
+#[derive(Debug, Clone, PartialEq)]
+pub enum FileCategory {
+    EntryPoint,
+    UnitTest,
+    IntegrationTest,
+    CoreLogic,
+    Utility,
+    Header,
+    Implementation,
+    Configuration,
+    Unknown,
+}
+
+pub fn categorize_cpp_file(path: &str) -> FileCategory {
+    let path_lower = path.to_lowercase();
+    let filename = Path::new(path).file_name()
+        .and_then(|s| s.to_str())
+        .unwrap_or("")
+        .to_lowercase();
+    
+    // Entry points
+    if filename == "main.cpp" || filename == "main.c" || filename == "winmain.cpp" {
+        return FileCategory::EntryPoint;
+    }
+    
+    // Tests
+    if path_lower.contains("test") || path_lower.contains("spec") 
+        || filename.starts_with("test_") || filename.ends_with("_test.cpp")
+        || filename.contains("gtest") || filename.contains("catch") {
+        return FileCategory::UnitTest;
+    }
+    
+    // Headers vs Implementation
+    if filename.ends_with(".h") || filename.ends_with(".hpp") 
+        || filename.ends_with(".hxx") || filename.ends_with(".hh") {
+        return FileCategory::Header;
+    }
+    
+    if filename.ends_with(".cpp") || filename.ends_with(".cc") 
+        || filename.ends_with(".cxx") || filename.ends_with(".c") {
+        return FileCategory::Implementation;
+    }
+    
+    // Configuration
+    if filename.ends_with(".cmake") || filename == "cmakelists.txt" 
+        || filename.ends_with(".config") {
+        return FileCategory::Configuration;
+    }
+    
+    // Utilities
+    if path_lower.contains("util") || path_lower.contains("helper") 
+        || path_lower.contains("common") {
+        return FileCategory::Utility;
+    }
+    
+    FileCategory::Unknown
+}
+
+pub fn infer_cpp_purpose(path: &str, category: &FileCategory) -> String {
+    let path_lower = path.to_lowercase();
+    
+    match category {
+        FileCategory::EntryPoint => "Application entry point".to_string(),
+        FileCategory::UnitTest => "Unit tests".to_string(),
+        FileCategory::Header => "Header declarations".to_string(),
+        FileCategory::Configuration => "Build configuration".to_string(),
+        FileCategory::Utility => "Utility functions".to_string(),
+        FileCategory::Implementation => {
+            // Для Implementation проверяем эвристики по пути
+            if path_lower.contains("network") || path_lower.contains("socket") {
+                "Network operations".to_string()
+            } else if path_lower.contains("database") || path_lower.contains("db") {
+                "Database operations".to_string()
+            } else if path_lower.contains("ui") || path_lower.contains("gui") {
+                "User interface".to_string()
+            } else {
+                "Implementation code".to_string()
+            }
+        },
+        _ => {
+            if path_lower.contains("network") || path_lower.contains("socket") {
+                "Network operations".to_string()
+            } else if path_lower.contains("database") || path_lower.contains("db") {
+                "Database operations".to_string()
+            } else if path_lower.contains("ui") || path_lower.contains("gui") {
+                "User interface".to_string()
+            } else {
+                "Core application logic".to_string()
+            }
+        }
+    }
+}
 
 fn is_declaration_kind(kind: EntityKind) -> bool {
     matches!(
@@ -158,4 +252,30 @@ fn classify_usage(entity: &Entity) -> String {
         _ => "expr",
     }
     .to_string()
+}
+#[cfg(test)]
+mod categorization_tests {
+    use super::*;
+
+    #[test]
+    fn test_cpp_categorization() {
+        assert_eq!(categorize_cpp_file("main.cpp"), FileCategory::EntryPoint);
+        assert_eq!(categorize_cpp_file("utils.h"), FileCategory::Header);
+        assert_eq!(categorize_cpp_file("utils.cpp"), FileCategory::Implementation);
+        assert_eq!(categorize_cpp_file("test_utils.cpp"), FileCategory::UnitTest);
+        assert_eq!(categorize_cpp_file("CMakeLists.txt"), FileCategory::Configuration);
+        assert_eq!(categorize_cpp_file("src/network/client.cpp"), FileCategory::Implementation);
+    }
+
+    #[test]
+    fn test_cpp_purpose_inference() {
+        assert_eq!(infer_cpp_purpose("main.cpp", &FileCategory::EntryPoint), "Application entry point");
+        assert_eq!(infer_cpp_purpose("utils.h", &FileCategory::Header), "Header declarations");
+        assert_eq!(infer_cpp_purpose("test.cpp", &FileCategory::UnitTest), "Unit tests");
+        // Для Implementation категории проверяем эвристики по пути
+        assert_eq!(infer_cpp_purpose("src/network/net.cpp", &FileCategory::Implementation), "Network operations");
+        assert_eq!(infer_cpp_purpose("src/database/db.cpp", &FileCategory::Implementation), "Database operations");
+        assert_eq!(infer_cpp_purpose("src/ui/window.cpp", &FileCategory::Implementation), "User interface");
+        assert_eq!(infer_cpp_purpose("src/core/app.cpp", &FileCategory::Implementation), "Implementation code");
+    }
 }

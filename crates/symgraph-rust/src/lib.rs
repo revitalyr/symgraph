@@ -7,6 +7,97 @@ use symgraph_models::{
     GenericRelation as Relation, GenericSymbol as Symbol, ModuleAnalysis, ModuleInfo,
 };
 
+#[derive(Debug, Clone, PartialEq)]
+pub enum RustFileCategory {
+    EntryPoint,
+    Library,
+    UnitTest,
+    IntegrationTest,
+    Benchmark,
+    Example,
+    Build,
+    Configuration,
+    Unknown,
+}
+
+pub fn categorize_rust_file(path: &str) -> RustFileCategory {
+    let path_lower = path.to_lowercase();
+    let filename = Path::new(path).file_name()
+        .and_then(|s| s.to_str())
+        .unwrap_or("")
+        .to_lowercase();
+    
+    // Entry points
+    if filename == "main.rs" || filename == "bin.rs" {
+        return RustFileCategory::EntryPoint;
+    }
+    
+    if filename == "lib.rs" {
+        return RustFileCategory::Library;
+    }
+    
+    // Build scripts
+    if filename == "build.rs" {
+        return RustFileCategory::Build;
+    }
+    
+    // Configuration
+    if filename == "cargo.toml" || filename == "config.rs" {
+        return RustFileCategory::Configuration;
+    }
+    
+    // Tests - проверяем директории сначала
+    if path_lower.contains("/tests/") || path_lower.contains("\\tests\\") 
+        || path_lower.starts_with("tests/") || path_lower.starts_with("tests\\") {
+        return RustFileCategory::IntegrationTest;
+    }
+    
+    // Benchmarks
+    if path_lower.contains("/benches/") || path_lower.contains("\\benches\\") 
+        || path_lower.starts_with("benches/") || path_lower.starts_with("benches\\")
+        || filename.contains("bench") {
+        return RustFileCategory::Benchmark;
+    }
+    
+    // Examples
+    if path_lower.contains("/examples/") || path_lower.contains("\\examples\\") 
+        || path_lower.starts_with("examples/") || path_lower.starts_with("examples\\") {
+        return RustFileCategory::Example;
+    }
+    
+    // Unit tests - проверяем после директорий
+    if filename.starts_with("test_") || filename.contains("_test") {
+        return RustFileCategory::UnitTest;
+    }
+    
+    RustFileCategory::Unknown
+}
+
+pub fn infer_rust_purpose(path: &str, category: &RustFileCategory) -> String {
+    match category {
+        RustFileCategory::EntryPoint => "Application entry point".to_string(),
+        RustFileCategory::Library => "Library root module".to_string(),
+        RustFileCategory::UnitTest => "Unit tests".to_string(),
+        RustFileCategory::IntegrationTest => "Integration tests".to_string(),
+        RustFileCategory::Benchmark => "Performance benchmarks".to_string(),
+        RustFileCategory::Example => "Usage examples".to_string(),
+        RustFileCategory::Build => "Build script".to_string(),
+        RustFileCategory::Configuration => "Configuration".to_string(),
+        _ => {
+            let path_lower = path.to_lowercase();
+            if path_lower.contains("network") || path_lower.contains("net") {
+                "Network operations".to_string()
+            } else if path_lower.contains("database") || path_lower.contains("db") {
+                "Database operations".to_string()
+            } else if path_lower.contains("ui") || path_lower.contains("gui") {
+                "User interface".to_string()
+            } else {
+                "Core module".to_string()
+            }
+        }
+    }
+}
+
 /// Try to detect whether the file represents a Rust module and return basic info
 pub fn scan_rust_module(file_path: &str) -> Result<Option<ModuleInfo>> {
     let text = fs::read_to_string(file_path)?;
@@ -298,5 +389,31 @@ mod tests {
         let s = "pub struct S;\nimpl S { pub fn do_it(&self) {} }";
         let res = analyze_rust_module_from_text(s, "s.rs").unwrap().unwrap();
         assert!(res.symbols.iter().any(|s| s.name == "S::do_it"));
+    }
+}
+#[cfg(test)]
+mod categorization_tests {
+    use super::*;
+
+    #[test]
+    fn test_rust_categorization() {
+        assert_eq!(categorize_rust_file("src/main.rs"), RustFileCategory::EntryPoint);
+        assert_eq!(categorize_rust_file("src/lib.rs"), RustFileCategory::Library);
+        assert_eq!(categorize_rust_file("tests/integration_test.rs"), RustFileCategory::IntegrationTest);
+        assert_eq!(categorize_rust_file("src/test_utils.rs"), RustFileCategory::UnitTest);
+        assert_eq!(categorize_rust_file("benches/benchmark.rs"), RustFileCategory::Benchmark);
+        assert_eq!(categorize_rust_file("examples/example.rs"), RustFileCategory::Example);
+        assert_eq!(categorize_rust_file("build.rs"), RustFileCategory::Build);
+    }
+
+    #[test]
+    fn test_rust_purpose_inference() {
+        assert_eq!(infer_rust_purpose("src/main.rs", &RustFileCategory::EntryPoint), "Application entry point");
+        assert_eq!(infer_rust_purpose("src/lib.rs", &RustFileCategory::Library), "Library root module");
+        assert_eq!(infer_rust_purpose("tests/test.rs", &RustFileCategory::IntegrationTest), "Integration tests");
+        assert_eq!(infer_rust_purpose("src/network/mod.rs", &RustFileCategory::Unknown), "Network operations");
+        assert_eq!(infer_rust_purpose("src/database/db.rs", &RustFileCategory::Unknown), "Database operations");
+        assert_eq!(infer_rust_purpose("src/ui/window.rs", &RustFileCategory::Unknown), "User interface");
+        assert_eq!(infer_rust_purpose("src/core/app.rs", &RustFileCategory::Unknown), "Core module");
     }
 }

@@ -1,6 +1,8 @@
 use anyhow::Result;
 use rusqlite::{params, Connection};
 
+pub mod annotations;
+
 pub struct Db {
     pub conn: Connection,
 }
@@ -11,16 +13,41 @@ impl Db {
         conn.execute_batch(include_str!("schema.sql"))?;
         Ok(Self { conn })
     }
-    pub fn ensure_file(&mut self, path: &str, lang: &str) -> Result<i64> {
+    
+    pub fn ensure_project(&mut self, name: &str, root_path: &str) -> Result<i64> {
         self.conn.execute(
-            "INSERT OR IGNORE INTO files(path, lang) VALUES (?1, ?2)",
-            params![path, lang],
+            "INSERT OR IGNORE INTO projects(name, root_path) VALUES (?1, ?2)",
+            params![name, root_path],
+        )?;
+        Ok(self
+            .conn
+            .query_row("SELECT id FROM projects WHERE root_path=?1", params![root_path], |r| {
+                r.get::<_, i64>(0)
+            })?)
+    }
+    
+    pub fn update_project_annotation(&mut self, project_id: i64, description: &str, purpose: &str, structure: &str, dependencies: &str) -> Result<()> {
+        self.conn.execute(
+            "UPDATE projects SET description=?1, purpose=?2, structure=?3, dependencies=?4 WHERE id=?5",
+            params![description, purpose, structure, dependencies, project_id],
+        )?;
+        Ok(())
+    }
+    
+    pub fn ensure_file_with_category(&mut self, project_id: i64, path: &str, lang: &str, category: Option<&str>, purpose: Option<&str>) -> Result<i64> {
+        self.conn.execute(
+            "INSERT OR IGNORE INTO files(project_id, path, lang, category, purpose) VALUES (?1, ?2, ?3, ?4, ?5)",
+            params![project_id, path, lang, category, purpose],
         )?;
         Ok(self
             .conn
             .query_row("SELECT id FROM files WHERE path=?1", params![path], |r| {
                 r.get::<_, i64>(0)
             })?)
+    }
+    
+    pub fn ensure_file(&mut self, path: &str, lang: &str) -> Result<i64> {
+        self.ensure_file_with_category(1, path, lang, None, None)
     }
     pub fn find_symbol_by_usr(&self, usr: &str) -> Result<Option<i64>> {
         let mut st = self.conn.prepare("SELECT id FROM symbols WHERE usr=?1")?;

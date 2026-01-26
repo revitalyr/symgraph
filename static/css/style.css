@@ -1,0 +1,15 @@
+#graph {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+#graph li {
+  display: inline-block;
+  margin-right: 20px;
+}
+
+#graph li a {
+  text-decoration: none;
+  color: #333;
+}
