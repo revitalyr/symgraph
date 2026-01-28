@@ -1,3 +1,139 @@
+body {
+    font-family: Arial, sans-serif;
+    margin: 20px;
+    background-color: #f5f5f5;
+}
+
+.container {
+    max-width: 1200px;
+    margin: 0 auto;
+    background-color: white;
+    padding: 20px;
+    border-radius: 8px;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+}
+
+.navigation {
+    display: flex;
+    gap: 10px;
+    margin-bottom: 20px;
+    border-bottom: 2px solid #eee;
+    padding-bottom: 10px;
+}
+
+.nav-link {
+    padding: 8px 16px;
+    text-decoration: none;
+    color: #666;
+    border-radius: 4px 4px 0 0;
+    transition: all 0.2s;
+}
+
+.nav-link:hover {
+    background-color: #f8f9fa;
+    color: #007cba;
+}
+
+.nav-link.active {
+    background-color: #007cba;
+    color: white;
+}
+
+.stats {
+    background: #f8f9fa;
+    padding: 15px;
+    border-radius: 5px;
+    margin-bottom: 20px;
+    border-left: 4px solid #007cba;
+}
+
+.section {
+    margin-bottom: 30px;
+}
+
+h1 {
+    color: #333;
+    border-bottom: 2px solid #007cba;
+    padding-bottom: 10px;
+}
+
+h3 {
+    color: #555;
+    margin-top: 0;
+}
+
+table {
+    width: 100%;
+    border-collapse: collapse;
+    margin-top: 10px;
+}
+
+th, td {
+    padding: 12px;
+    text-align: left;
+    border-bottom: 1px solid #ddd;
+}
+
+th {
+    background-color: #f2f2f2;
+    font-weight: 600;
+    color: #333;
+}
+
+tr:hover {
+    background-color: #f9f9f9;
+}
+
+.search {
+    margin-bottom: 20px;
+    display: flex;
+    gap: 10px;
+    align-items: center;
+}
+
+input[type="text"] {
+    padding: 8px 12px;
+    width: 300px;
+    border: 1px solid #ddd;
+    border-radius: 4px;
+    font-size: 14px;
+}
+
+input[type="text"]:focus {
+    outline: none;
+    border-color: #007cba;
+    box-shadow: 0 0 0 2px rgba(0,124,186,0.2);
+}
+
+button {
+    padding: 8px 16px;
+    background: #007cba;
+    color: white;
+    border: none;
+    cursor: pointer;
+    border-radius: 4px;
+    font-size: 14px;
+    transition: background-color 0.2s;
+}
+
+button:hover {
+    background: #005a87;
+}
+
+.loading {
+    text-align: center;
+    color: #666;
+    font-style: italic;
+}
+
+.error {
+    color: #d32f2f;
+    background-color: #ffebee;
+    padding: 10px;
+    border-radius: 4px;
+    border-left: 4px solid #d32f2f;
+}
+
 #graph {
   list-style: none;
   margin: 0;

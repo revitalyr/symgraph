@@ -1,0 +1,160 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>SCIP Symbols - Symgraph</title>
+    <link rel="stylesheet" href="/static/css/style.css">
+    <style>
+        .symbol-card {
+            border: 1px solid #ddd;
+            border-radius: 8px;
+            padding: 15px;
+            margin-bottom: 15px;
+            background: #fafafa;
+        }
+        .symbol-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 10px;
+        }
+        .symbol-name {
+            font-weight: bold;
+            color: #007cba;
+            font-size: 1.1em;
+        }
+        .symbol-kind {
+            background: #6c757d;
+            color: white;
+            padding: 2px 8px;
+            border-radius: 12px;
+            font-size: 0.8em;
+        }
+        .symbol-details {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 10px;
+            margin-bottom: 10px;
+        }
+        .detail-item {
+            font-size: 0.9em;
+        }
+        .detail-label {
+            font-weight: bold;
+            color: #555;
+        }
+        .documentation {
+            background: #e9ecef;
+            padding: 10px;
+            border-radius: 4px;
+            margin-top: 10px;
+            font-style: italic;
+        }
+        .relationships {
+            margin-top: 10px;
+        }
+        .relationship-item {
+            background: #fff3cd;
+            padding: 5px 10px;
+            margin: 2px 0;
+            border-radius: 4px;
+            font-size: 0.9em;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>SCIP Symbols</h1>
+        <div class="search">
+            <input type="text" id="searchInput" placeholder="Search symbols..." onkeyup="searchSymbols()">
+            <select id="kindFilter" onchange="filterByKind()">
+                <option value="">All Kinds</option>
+                <option value="function">Functions</option>
+                <option value="class">Classes</option>
+                <option value="variable">Variables</option>
+                <option value="method">Methods</option>
+                <option value="type">Types</option>
+            </select>
+            <button onclick="loadSymbols()">Refresh</button>
+            <a href="/" style="margin-left: 20px;">← Back to Main</a>
+        </div>
+        
+        <div id="symbols">
+            <div class="loading">Loading symbols...</div>
+        </div>
+    </div>
+    
+    <script src="/static/js/app.js"></script>
+    <script>
+        let allSymbols = [];
+        
+        function loadSymbols() {
+            document.getElementById('symbols').innerHTML = '<div class="loading">Loading symbols...</div>';
+            
+            fetch('/api/scip/symbols')
+                .then(response => response.json())
+                .then(data => {
+                    allSymbols = data;
+                    displaySymbols(data);
+                })
+                .catch(error => {
+                    console.error('Error loading symbols:', error);
+                    document.getElementById('symbols').innerHTML = '<div class="error">Error loading symbols</div>';
+                });
+        }
+        
+        function displaySymbols(symbols) {
+            let html = '';
+            symbols.forEach(symbol => {
+                html += `
+                    <div class="symbol-card">
+                        <div class="symbol-header">
+                            <div class="symbol-name">${symbol.display_name || symbol.symbol}</div>
+                            <div class="symbol-kind">${symbol.symbol_kind}</div>
+                        </div>
+                        <div class="symbol-details">
+                            <div class="detail-item">
+                                <span class="detail-label">Symbol:</span> ${symbol.symbol}
+                            </div>
+                            <div class="detail-item">
+                                <span class="detail-label">File:</span> ${symbol.file_path || 'Unknown'}
+                            </div>
+                        </div>
+                        ${symbol.documentation ? `<div class="documentation">${symbol.documentation}</div>` : ''}
+                        ${symbol.relationships && symbol.relationships.length > 0 ? `
+                            <div class="relationships">
+                                <strong>Relationships:</strong>
+                                ${symbol.relationships.map(rel => 
+                                    `<div class="relationship-item">${rel.kind}: ${rel.target_symbol}</div>`
+                                ).join('')}
+                            </div>
+                        ` : ''}
+                    </div>
+                `;
+            });
+            document.getElementById('symbols').innerHTML = html || '<p>No symbols found</p>';
+        }
+        
+        function searchSymbols() {
+            const query = document.getElementById('searchInput').value.toLowerCase();
+            const kindFilter = document.getElementById('kindFilter').value;
+            
+            let filtered = allSymbols.filter(symbol => {
+                const matchesSearch = !query || 
+                    (symbol.display_name && symbol.display_name.toLowerCase().includes(query)) ||
+                    symbol.symbol.toLowerCase().includes(query);
+                const matchesKind = !kindFilter || symbol.symbol_kind === kindFilter;
+                return matchesSearch && matchesKind;
+            });
+            
+            displaySymbols(filtered);
+        }
+        
+        function filterByKind() {
+            searchSymbols();
+        }
+        
+        // Load symbols when page loads
+        document.addEventListener('DOMContentLoaded', loadSymbols);
+    </script>
+</body>
+</html>

@@ -1,0 +1,40 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Symgraph Viewer</title>
+    <link rel="stylesheet" href="/static/css/style.css">
+</head>
+<body>
+    <div class="container">
+        <h1>Symgraph Project Viewer</h1>
+        
+        <nav class="navigation">
+            <a href="/" class="nav-link active">Overview</a>
+            <a href="/static/scip_documents.html" class="nav-link">SCIP Documents</a>
+            <a href="/static/scip_symbols.html" class="nav-link">SCIP Symbols</a>
+        </nav>
+        
+        <div class="search">
+            <input type="text" id="searchInput" placeholder="Search symbols..." onkeyup="searchSymbols()">
+            <button onclick="loadData()">Refresh</button>
+        </div>
+        
+        <div id="stats" class="stats">
+            <h3>Database Statistics</h3>
+            <p>Loading...</p>
+        </div>
+        
+        <div class="section">
+            <h3>Files by Category</h3>
+            <div id="files">Loading...</div>
+        </div>
+        
+        <div class="section">
+            <h3>Symbols</h3>
+            <div id="symbols">Loading...</div>
+        </div>
+    </div>
+    
+    <script src="/static/js/app.js"></script>
+</body>
+</html>

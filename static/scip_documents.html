@@ -1,0 +1,105 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>SCIP Documents - Symgraph</title>
+    <link rel="stylesheet" href="/static/css/style.css">
+    <style>
+        .document-card {
+            border: 1px solid #ddd;
+            border-radius: 8px;
+            padding: 15px;
+            margin-bottom: 15px;
+            background: #fafafa;
+        }
+        .document-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 10px;
+        }
+        .document-path {
+            font-weight: bold;
+            color: #007cba;
+        }
+        .document-stats {
+            display: flex;
+            gap: 20px;
+            font-size: 0.9em;
+            color: #666;
+        }
+        .badge {
+            background: #007cba;
+            color: white;
+            padding: 2px 8px;
+            border-radius: 12px;
+            font-size: 0.8em;
+        }
+        .language-badge {
+            background: #28a745;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>SCIP Documents</h1>
+        <div class="search">
+            <input type="text" id="searchInput" placeholder="Search documents..." onkeyup="searchDocuments()">
+            <button onclick="loadDocuments()">Refresh</button>
+            <a href="/" style="margin-left: 20px;">← Back to Main</a>
+        </div>
+        
+        <div id="documents">
+            <div class="loading">Loading documents...</div>
+        </div>
+    </div>
+    
+    <script src="/static/js/app.js"></script>
+    <script>
+        function loadDocuments() {
+            document.getElementById('documents').innerHTML = '<div class="loading">Loading documents...</div>';
+            
+            fetch('/api/scip/documents')
+                .then(response => response.json())
+                .then(data => {
+                    let html = '';
+                    data.forEach(doc => {
+                        html += `
+                            <div class="document-card">
+                                <div class="document-header">
+                                    <div class="document-path">${doc.relative_path}</div>
+                                    <div class="badge language-badge">${doc.language}</div>
+                                </div>
+                                <div class="document-stats">
+                                    <span><strong>Symbols:</strong> ${doc.symbol_count}</span>
+                                    <span><strong>Occurrences:</strong> ${doc.occurrence_count}</span>
+                                </div>
+                            </div>
+                        `;
+                    });
+                    document.getElementById('documents').innerHTML = html || '<p>No documents found</p>';
+                })
+                .catch(error => {
+                    console.error('Error loading documents:', error);
+                    document.getElementById('documents').innerHTML = '<div class="error">Error loading documents</div>';
+                });
+        }
+        
+        function searchDocuments() {
+            const query = document.getElementById('searchInput').value.toLowerCase();
+            const cards = document.querySelectorAll('.document-card');
+            
+            cards.forEach(card => {
+                const path = card.querySelector('.document-path').textContent.toLowerCase();
+                if (path.includes(query)) {
+                    card.style.display = 'block';
+                } else {
+                    card.style.display = 'none';
+                }
+            });
+        }
+        
+        // Load documents when page loads
+        document.addEventListener('DOMContentLoaded', loadDocuments);
+    </script>
+</body>
+</html>
