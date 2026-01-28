@@ -80,7 +80,10 @@ pub fn analyze_rust_project(root_path: &str, files: &[(String, String, String)])
 fn extract_project_name_cpp(root_path: &str) -> String {
     // Try CMakeLists.txt
     let cmake_path = Path::new(root_path).join("CMakeLists.txt");
-    if let Ok(content) = std::fs::read_to_string(cmake_path) {
+    if let Ok(content) = std::fs::read_to_string(&cmake_path).map_err(|e| {
+        log::debug!("Failed to read CMakeLists.txt from '{}': {}", cmake_path.display(), e);
+        e
+    }) {
         if let Some(start) = content.find("project(") {
             let after = &content[start + 8..];
             if let Some(end) = after.find(')') {
@@ -100,7 +103,10 @@ fn extract_project_name_cpp(root_path: &str) -> String {
 
 fn extract_project_name_rust(root_path: &str) -> String {
     let cargo_path = Path::new(root_path).join("Cargo.toml");
-    if let Ok(content) = std::fs::read_to_string(cargo_path) {
+    if let Ok(content) = std::fs::read_to_string(&cargo_path).map_err(|e| {
+        log::debug!("Failed to read Cargo.toml from '{}': {}", cargo_path.display(), e);
+        e
+    }) {
         for line in content.lines() {
             if line.trim().starts_with("name") {
                 if let Some(eq_pos) = line.find('=') {
@@ -221,7 +227,10 @@ fn extract_rust_dependencies(root_path: &str) -> Result<Vec<String>> {
     let cargo_path = Path::new(root_path).join("Cargo.toml");
     let mut deps = Vec::new();
     
-    if let Ok(content) = std::fs::read_to_string(cargo_path) {
+    if let Ok(content) = std::fs::read_to_string(&cargo_path).map_err(|e| {
+        log::debug!("Failed to read Cargo.toml from '{}': {}", cargo_path.display(), e);
+        e
+    }) {
         let mut in_deps = false;
         for line in content.lines() {
             let trimmed = line.trim();

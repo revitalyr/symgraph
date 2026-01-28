@@ -9,20 +9,20 @@ anyhow     = "1"
 clap       = { version = "4", features = ["derive"] }
 serde      = { version = "1", features = ["derive"] }
 serde_json = "1"
-rusqlite   = { version = "0.31", features = ["bundled"] }
+sled = "0.34"
+uuid = { version = "1.0", features = ["v4"] }
 shell-words = "1"
 walkdir = "2"
 
 # Rust scanning prototype deps
 cargo_metadata = "0.23"
 syn = { version = "2", features = ["full", "visit"] }
-petgraph = "0.6"
+tempfile = "3"
 
 symgraph-core      = { path = "../symgraph-core" }
 symgraph-discovery = { path = "../symgraph-discovery" }
 symgraph-cxx       = { path = "../symgraph-cxx" }
 symgraph-rust      = { path = "../symgraph-rust" }
-symgraph-scripts   = { path = "../symgraph-scripts" }
 clang = { version = "2.0", features = ["clang_10_0"] }
 
 [dev-dependencies]

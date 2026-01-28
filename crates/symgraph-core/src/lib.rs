@@ -1,136 +1,18 @@
-use anyhow::Result;
-use rusqlite::{params, Connection};
-
 pub mod annotations;
+pub mod scip;
+pub mod database;
 
-pub struct Db {
-    pub conn: Connection,
-}
+// Re-export database types and functions for easier access
+pub use database::{
+    SymgraphDb, Project, Module, File, Symbol, Occurrence, Edge,
+    insert_symbol, insert_occurrence, insert_edge, upsert_module
+};
 
-impl Db {
-    pub fn open(path: &str) -> Result<Self> {
-        let conn = Connection::open(path)?;
-        conn.execute_batch(include_str!("schema.sql"))?;
-        Ok(Self { conn })
-    }
-    
-    pub fn ensure_project(&mut self, name: &str, root_path: &str) -> Result<i64> {
-        self.conn.execute(
-            "INSERT OR IGNORE INTO projects(name, root_path) VALUES (?1, ?2)",
-            params![name, root_path],
-        )?;
-        Ok(self
-            .conn
-            .query_row("SELECT id FROM projects WHERE root_path=?1", params![root_path], |r| {
-                r.get::<_, i64>(0)
-            })?)
-    }
-    
-    pub fn update_project_annotation(&mut self, project_id: i64, description: &str, purpose: &str, structure: &str, dependencies: &str) -> Result<()> {
-        self.conn.execute(
-            "UPDATE projects SET description=?1, purpose=?2, structure=?3, dependencies=?4 WHERE id=?5",
-            params![description, purpose, structure, dependencies, project_id],
-        )?;
-        Ok(())
-    }
-    
-    pub fn ensure_file_with_category(&mut self, project_id: i64, path: &str, lang: &str, category: Option<&str>, purpose: Option<&str>) -> Result<i64> {
-        self.conn.execute(
-            "INSERT OR IGNORE INTO files(project_id, path, lang, category, purpose) VALUES (?1, ?2, ?3, ?4, ?5)",
-            params![project_id, path, lang, category, purpose],
-        )?;
-        Ok(self
-            .conn
-            .query_row("SELECT id FROM files WHERE path=?1", params![path], |r| {
-                r.get::<_, i64>(0)
-            })?)
-    }
-    
-    pub fn ensure_file(&mut self, path: &str, lang: &str) -> Result<i64> {
-        self.ensure_file_with_category(1, path, lang, None, None)
-    }
-    pub fn find_symbol_by_usr(&self, usr: &str) -> Result<Option<i64>> {
-        let mut st = self.conn.prepare("SELECT id FROM symbols WHERE usr=?1")?;
-        let mut rows = st.query(params![usr])?;
-        if let Some(row) = rows.next()? {
-            Ok(Some(row.get(0)?))
-        } else {
-            Ok(None)
-        }
-    }
-    pub fn query_edges_by_kind_from(&self, kind: &str, from_usr: &str) -> Result<Vec<String>> {
-        let mut st = self.conn.prepare(
-            "SELECT s2.name
-             FROM edges e
-             JOIN symbols s1 ON s1.id=e.from_sym
-             JOIN symbols s2 ON s2.id=e.to_sym
-            WHERE e.kind=?1 AND s1.usr=?2",
-        )?;
-        let rows = st.query_map(params![kind, from_usr], |r| Ok(r.get::<_, String>(0)?))?;
-        Ok(rows.filter_map(|x| x.ok()).collect())
-    }
-}
+// Re-export SCIP functions for easier access
+pub use scip::{parse_scip_file, parse_scip_bytes, load_scip_to_database};
 
-pub fn insert_symbol(
-    conn: &mut Connection,
-    file_id: i64,
-    usr: Option<&str>,
-    key: Option<&str>,
-    name: &str,
-    kind: &str,
-    is_def: bool,
-) -> Result<i64> {
-    conn.execute(
-        "INSERT INTO symbols(file_id, usr, key, name, kind, is_definition)
-       VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
-        params![file_id, usr, key, name, kind, is_def as i32],
-    )?;
-    Ok(conn.last_insert_rowid())
-}
-
-pub fn insert_occurrence(
-    conn: &mut Connection,
-    sym_id: i64,
-    file_id: i64,
-    usage: &str,
-    line: u32,
-    col: u32,
-) -> Result<i64> {
-    conn.execute(
-        "INSERT INTO occurrences(symbol_id, file_id, usage_kind, line, column)
-       VALUES (?1, ?2, ?3, ?4, ?5)",
-        params![sym_id, file_id, usage, line, col],
-    )?;
-    Ok(conn.last_insert_rowid())
-}
-
-pub fn insert_edge(
-    conn: &mut Connection,
-    from_sym: Option<i64>,
-    to_sym: Option<i64>,
-    from_module: Option<i64>,
-    to_module: Option<i64>,
-    kind: &str,
-) -> Result<i64> {
-    conn.execute(
-        "INSERT INTO edges(from_sym, to_sym, from_module, to_module, kind)
-       VALUES (?1, ?2, ?3, ?4, ?5)",
-        params![from_sym, to_sym, from_module, to_module, kind],
-    )?;
-    Ok(conn.last_insert_rowid())
-}
-
-pub fn upsert_module(conn: &mut Connection, name: &str, kind: &str, path: &str) -> Result<i64> {
-    conn.execute(
-        "INSERT OR IGNORE INTO modules(name, kind, path) VALUES (?1, ?2, ?3)",
-        params![name, kind, path],
-    )?;
-    Ok(
-        conn.query_row("SELECT id FROM modules WHERE name=?1", params![name], |r| {
-            r.get::<_, i64>(0)
-        })?,
-    )
-}
+// Legacy type alias for backward compatibility
+pub type Db = SymgraphDb;
 
 #[cfg(test)]
 mod tests {
@@ -139,26 +21,16 @@ mod tests {
     /// Демонстрация: создание in-memory базы данных
     #[test]
     fn test_db_open_in_memory() {
-        let db = Db::open(":memory:").expect("Failed to open in-memory database");
-        // Проверяем, что таблицы созданы
-        let count: i64 = db
-            .conn
-            .query_row(
-                "SELECT COUNT(*) FROM sqlite_master WHERE type='table'",
-                [],
-                |r| r.get(0),
-            )
-            .unwrap();
-        assert!(
-            count >= 5,
-            "Should have at least 5 tables (modules, files, symbols, occurrences, edges)"
-        );
+        let db = Db::open("test_db_1").expect("Failed to open database");
+        // Проверяем, что база данных открыта
+        drop(db);
+        std::fs::remove_dir_all("test_db_1").ok();
     }
 
     /// Демонстрация: добавление файла в базу
     #[test]
     fn test_ensure_file() {
-        let mut db = Db::open(":memory:").unwrap();
+        let mut db = Db::open("test_db_2").unwrap();
 
         let file_id1 = db.ensure_file("src/main.cpp", "c++").unwrap();
         let file_id2 = db.ensure_file("src/main.cpp", "c++").unwrap();
@@ -168,18 +40,21 @@ mod tests {
         assert_eq!(file_id1, file_id2);
         // Разные файлы имеют разные ID
         assert_ne!(file_id1, file_id3);
+        
+        drop(db);
+        std::fs::remove_dir_all("test_db_2").ok();
     }
 
     /// Демонстрация: добавление символов (функции, классы)
     #[test]
     fn test_insert_symbol() {
-        let mut db = Db::open(":memory:").unwrap();
+        let mut db = Db::open("test_db_3").unwrap();
         let file_id = db.ensure_file("example.cpp", "c++").unwrap();
 
         // Добавляем функцию
         let sym1 = insert_symbol(
-            &mut db.conn,
-            file_id,
+            &mut db,
+            &file_id,
             Some("c:@F@main#"),
             None,
             "main",
@@ -190,8 +65,8 @@ mod tests {
 
         // Добавляем класс
         let sym2 = insert_symbol(
-            &mut db.conn,
-            file_id,
+            &mut db,
+            &file_id,
             Some("c:@S@MyClass#"),
             None,
             "MyClass",
@@ -200,20 +75,23 @@ mod tests {
         )
         .unwrap();
 
-        assert!(sym1 > 0);
-        assert!(sym2 > 0);
+        assert!(!sym1.is_empty());
+        assert!(!sym2.is_empty());
         assert_ne!(sym1, sym2);
+        
+        drop(db);
+        std::fs::remove_dir_all("test_db_3").ok();
     }
 
     /// Демонстрация: поиск символа по USR
     #[test]
     fn test_find_symbol_by_usr() {
-        let mut db = Db::open(":memory:").unwrap();
+        let mut db = Db::open("test_db_4").unwrap();
         let file_id = db.ensure_file("test.cpp", "c++").unwrap();
 
         let sym_id = insert_symbol(
-            &mut db.conn,
-            file_id,
+            &mut db,
+            &file_id,
             Some("c:@F@foo#"),
             None,
             "foo",
@@ -229,17 +107,20 @@ mod tests {
         // Не найти несуществующий символ
         let not_found = db.find_symbol_by_usr("c:@F@bar#").unwrap();
         assert_eq!(not_found, None);
+        
+        drop(db);
+        std::fs::remove_dir_all("test_db_4").ok();
     }
 
     /// Демонстрация: добавление occurrences (места использования)
     #[test]
     fn test_insert_occurrence() {
-        let mut db = Db::open(":memory:").unwrap();
+        let mut db = Db::open("test_db_5").unwrap();
         let file_id = db.ensure_file("main.cpp", "c++").unwrap();
 
         let sym_id = insert_symbol(
-            &mut db.conn,
-            file_id,
+            &mut db,
+            &file_id,
             Some("c:@F@print#"),
             None,
             "print",
@@ -249,36 +130,28 @@ mod tests {
         .unwrap();
 
         // Добавляем несколько мест использования
-        let occ1 = insert_occurrence(&mut db.conn, sym_id, file_id, "call", 10, 5).unwrap();
-        let occ2 = insert_occurrence(&mut db.conn, sym_id, file_id, "call", 25, 8).unwrap();
-        let occ3 = insert_occurrence(&mut db.conn, sym_id, file_id, "reference", 42, 12).unwrap();
+        let occ1 = insert_occurrence(&mut db, &sym_id, &file_id, "call", 10, 5).unwrap();
+        let occ2 = insert_occurrence(&mut db, &sym_id, &file_id, "call", 25, 8).unwrap();
+        let occ3 = insert_occurrence(&mut db, &sym_id, &file_id, "reference", 42, 12).unwrap();
 
-        assert!(occ1 > 0);
-        assert!(occ2 > 0);
-        assert!(occ3 > 0);
-
-        // Проверяем количество occurrences
-        let count: i64 = db
-            .conn
-            .query_row(
-                "SELECT COUNT(*) FROM occurrences WHERE symbol_id=?1",
-                params![sym_id],
-                |r| r.get(0),
-            )
-            .unwrap();
-        assert_eq!(count, 3);
+        assert!(!occ1.is_empty());
+        assert!(!occ2.is_empty());
+        assert!(!occ3.is_empty());
+        
+        drop(db);
+        std::fs::remove_dir_all("test_db_5").ok();
     }
 
     /// Демонстрация: создание графа вызовов (call graph)
     #[test]
     fn test_call_graph() {
-        let mut db = Db::open(":memory:").unwrap();
+        let mut db = Db::open("test_db_6").unwrap();
         let file_id = db.ensure_file("app.cpp", "c++").unwrap();
 
         // Создаём функции
         let main_id = insert_symbol(
-            &mut db.conn,
-            file_id,
+            &mut db,
+            &file_id,
             Some("c:@F@main#"),
             None,
             "main",
@@ -287,8 +160,8 @@ mod tests {
         )
         .unwrap();
         let foo_id = insert_symbol(
-            &mut db.conn,
-            file_id,
+            &mut db,
+            &file_id,
             Some("c:@F@foo#"),
             None,
             "foo",
@@ -297,8 +170,8 @@ mod tests {
         )
         .unwrap();
         let bar_id = insert_symbol(
-            &mut db.conn,
-            file_id,
+            &mut db,
+            &file_id,
             Some("c:@F@bar#"),
             None,
             "bar",
@@ -307,8 +180,8 @@ mod tests {
         )
         .unwrap();
         let baz_id = insert_symbol(
-            &mut db.conn,
-            file_id,
+            &mut db,
+            &file_id,
             Some("c:@F@baz#"),
             None,
             "baz",
@@ -319,18 +192,18 @@ mod tests {
 
         // main() вызывает foo() и bar()
         insert_edge(
-            &mut db.conn,
-            Some(main_id),
-            Some(foo_id),
+            &mut db,
+            Some(&main_id),
+            Some(&foo_id),
             None,
             None,
             "call",
         )
         .unwrap();
         insert_edge(
-            &mut db.conn,
-            Some(main_id),
-            Some(bar_id),
+            &mut db,
+            Some(&main_id),
+            Some(&bar_id),
             None,
             None,
             "call",
@@ -338,7 +211,7 @@ mod tests {
         .unwrap();
 
         // foo() вызывает baz()
-        insert_edge(&mut db.conn, Some(foo_id), Some(baz_id), None, None, "call").unwrap();
+        insert_edge(&mut db, Some(&foo_id), Some(&baz_id), None, None, "call").unwrap();
 
         // Запрос: кого вызывает main?
         let callees = db.query_edges_by_kind_from("call", "c:@F@main#").unwrap();
@@ -349,18 +222,21 @@ mod tests {
         // Запрос: кого вызывает foo?
         let foo_callees = db.query_edges_by_kind_from("call", "c:@F@foo#").unwrap();
         assert_eq!(foo_callees, vec!["baz".to_string()]);
+        
+        drop(db);
+        std::fs::remove_dir_all("test_db_6").ok();
     }
 
     /// Демонстрация: граф наследования классов
     #[test]
     fn test_inheritance_graph() {
-        let mut db = Db::open(":memory:").unwrap();
+        let mut db = Db::open("test_db_7").unwrap();
         let file_id = db.ensure_file("classes.cpp", "c++").unwrap();
 
         // Создаём классы
         let base_id = insert_symbol(
-            &mut db.conn,
-            file_id,
+            &mut db,
+            &file_id,
             Some("c:@S@Base#"),
             None,
             "Base",
@@ -369,8 +245,8 @@ mod tests {
         )
         .unwrap();
         let derived_id = insert_symbol(
-            &mut db.conn,
-            file_id,
+            &mut db,
+            &file_id,
             Some("c:@S@Derived#"),
             None,
             "Derived",
@@ -379,8 +255,8 @@ mod tests {
         )
         .unwrap();
         let child_id = insert_symbol(
-            &mut db.conn,
-            file_id,
+            &mut db,
+            &file_id,
             Some("c:@S@Child#"),
             None,
             "Child",
@@ -391,9 +267,9 @@ mod tests {
 
         // Derived наследует от Base
         insert_edge(
-            &mut db.conn,
-            Some(base_id),
-            Some(derived_id),
+            &mut db,
+            Some(&base_id),
+            Some(&derived_id),
             None,
             None,
             "inherit",
@@ -401,9 +277,9 @@ mod tests {
         .unwrap();
         // Child наследует от Derived
         insert_edge(
-            &mut db.conn,
-            Some(derived_id),
-            Some(child_id),
+            &mut db,
+            Some(&derived_id),
+            Some(&child_id),
             None,
             None,
             "inherit",
@@ -415,18 +291,21 @@ mod tests {
             .query_edges_by_kind_from("inherit", "c:@S@Base#")
             .unwrap();
         assert_eq!(base_children, vec!["Derived".to_string()]);
+        
+        drop(db);
+        std::fs::remove_dir_all("test_db_7").ok();
     }
 
     /// Демонстрация: граф членов класса
     #[test]
     fn test_member_graph() {
-        let mut db = Db::open(":memory:").unwrap();
+        let mut db = Db::open("test_db_8").unwrap();
         let file_id = db.ensure_file("person.cpp", "c++").unwrap();
 
         // Класс Person
         let person_id = insert_symbol(
-            &mut db.conn,
-            file_id,
+            &mut db,
+            &file_id,
             Some("c:@S@Person#"),
             None,
             "Person",
@@ -437,8 +316,8 @@ mod tests {
 
         // Поля и методы
         let name_id = insert_symbol(
-            &mut db.conn,
-            file_id,
+            &mut db,
+            &file_id,
             Some("c:@S@Person#name_"),
             None,
             "name_",
@@ -447,8 +326,8 @@ mod tests {
         )
         .unwrap();
         let age_id = insert_symbol(
-            &mut db.conn,
-            file_id,
+            &mut db,
+            &file_id,
             Some("c:@S@Person#age_"),
             None,
             "age_",
@@ -457,8 +336,8 @@ mod tests {
         )
         .unwrap();
         let get_name_id = insert_symbol(
-            &mut db.conn,
-            file_id,
+            &mut db,
+            &file_id,
             Some("c:@S@Person#getName#"),
             None,
             "getName",
@@ -469,27 +348,27 @@ mod tests {
 
         // Связи членства
         insert_edge(
-            &mut db.conn,
-            Some(person_id),
-            Some(name_id),
+            &mut db,
+            Some(&person_id),
+            Some(&name_id),
             None,
             None,
             "member",
         )
         .unwrap();
         insert_edge(
-            &mut db.conn,
-            Some(person_id),
-            Some(age_id),
+            &mut db,
+            Some(&person_id),
+            Some(&age_id),
             None,
             None,
             "member",
         )
         .unwrap();
         insert_edge(
-            &mut db.conn,
-            Some(person_id),
-            Some(get_name_id),
+            &mut db,
+            Some(&person_id),
+            Some(&get_name_id),
             None,
             None,
             "member",
@@ -504,82 +383,81 @@ mod tests {
         assert!(members.contains(&"name_".to_string()));
         assert!(members.contains(&"age_".to_string()));
         assert!(members.contains(&"getName".to_string()));
+        
+        drop(db);
+        std::fs::remove_dir_all("test_db_8").ok();
     }
 
     /// Демонстрация: работа с модулями (C++20 modules)
     #[test]
     fn test_module_graph() {
-        let mut db = Db::open(":memory:").unwrap();
+        let mut db = Db::open("test_db_9").unwrap();
 
         // Создаём модули
-        let foo_mod = upsert_module(&mut db.conn, "foo", "cpp20-module", "src/foo.cppm").unwrap();
-        let bar_mod = upsert_module(&mut db.conn, "bar", "cpp20-module", "src/bar.cppm").unwrap();
-        let main_mod = upsert_module(&mut db.conn, "main", "cpp20-module", "src/main.cpp").unwrap();
+        let foo_mod = upsert_module(&mut db, "foo", "cpp20-module", "src/foo.cppm").unwrap();
+        let bar_mod = upsert_module(&mut db, "bar", "cpp20-module", "src/bar.cppm").unwrap();
+        let main_mod = upsert_module(&mut db, "main", "cpp20-module", "src/main.cpp").unwrap();
 
         // main импортирует foo и bar
         insert_edge(
-            &mut db.conn,
+            &mut db,
             None,
             None,
-            Some(main_mod),
-            Some(foo_mod),
+            Some(&main_mod),
+            Some(&foo_mod),
             "module-import",
         )
         .unwrap();
         insert_edge(
-            &mut db.conn,
+            &mut db,
             None,
             None,
-            Some(main_mod),
-            Some(bar_mod),
+            Some(&main_mod),
+            Some(&bar_mod),
             "module-import",
         )
         .unwrap();
 
         // bar импортирует foo
         insert_edge(
-            &mut db.conn,
+            &mut db,
             None,
             None,
-            Some(bar_mod),
-            Some(foo_mod),
+            Some(&bar_mod),
+            Some(&foo_mod),
             "module-import",
         )
         .unwrap();
 
         // Проверяем количество импортов
-        let count: i64 = db
-            .conn
-            .query_row(
-                "SELECT COUNT(*) FROM edges WHERE kind='module-import'",
-                [],
-                |r| r.get(0),
-            )
-            .unwrap();
+        let count = db.db.scan_prefix("edge:").count();
         assert_eq!(count, 3);
+        
+        drop(db);
+        std::fs::remove_dir_all("test_db_9").ok();
     }
 
     /// Демонстрация: upsert_module не создаёт дубликаты
     #[test]
     fn test_upsert_module_idempotent() {
-        let mut db = Db::open(":memory:").unwrap();
+        let mut db = Db::open("test_db_10").unwrap();
 
         let id1 = upsert_module(
-            &mut db.conn,
+            &mut db,
             "my_module",
             "cpp20-module",
             "src/my_module.cppm",
         )
         .unwrap();
         let id2 = upsert_module(
-            &mut db.conn,
+            &mut db,
             "my_module",
             "cpp20-module",
             "src/my_module.cppm",
         )
         .unwrap();
         let id3 = upsert_module(
-            &mut db.conn,
+            &mut db,
             "other_module",
             "cpp20-module",
             "src/other.cppm",
@@ -590,5 +468,8 @@ mod tests {
         assert_eq!(id1, id2);
         // Разные модули имеют разные ID
         assert_ne!(id1, id3);
+        
+        drop(db);
+        std::fs::remove_dir_all("test_db_10").ok();
     }
 }

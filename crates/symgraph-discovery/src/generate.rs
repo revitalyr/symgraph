@@ -528,50 +528,37 @@ fn find_file_with_extension(dir: &Path, ext: &str) -> Result<PathBuf> {
     bail!("No .{} file found in {}", ext, dir.display())
 }
 
-/// Генерирует compile_commands.json для Cargo проектов, используя `cargo compdb`.
+/// Генерирует SCIP индекс для Cargo проектов, используя rust-analyzer SCIP.
 ///
 /// Попытка:
-/// 1) Запустить `cargo compdb --workspace` в каталоге проекта.
-/// 2) Если субкоманда отсутствует, пытаемся установить `cargo-compdb` через `cargo install cargo-compdb` и повторить.
+/// 1) Запустить `rust-analyzer scip . --output dump.scip` в каталоге проекта.
+/// 2) Если rust-analyzer отсутствует, пытаемся установить через `rustup component add rust-analyzer`.
+/// 3) Если rust-analyzer недоступен, возвращаем ошибку - больше не используем LSIF fallback.
 ///
-/// Возвращает путь к созданному файлу или ошибку с пояснением.
+/// Возвращает путь к созданному SCIP файлу или ошибку с пояснением.
 pub fn generate_from_cargo(project_dir: &Path, output_path: &Path, _build_dir: Option<&Path>) -> Result<PathBuf> {
-    // Prefer `rust-analyzer` for Cargo projects. Allow override via SYGRAPH_RUST_ANALYZER_CMD (for tests/custom paths)
-    let ra_bin = std::env::var("SYGRAPH_RUST_ANALYZER_CMD").unwrap_or_else(|_| "rust-analyzer".to_string());
+    use crate::scip::{ScipConfig, ScipLanguage, check_scip_tool_availability, get_installation_instruction};
 
-    // Run: `rust-analyzer lsif .` and write its stdout to the output path (LSIF format)
-    let mut cmd = Command::new(&ra_bin);
-    cmd.arg("lsif").arg(".").current_dir(project_dir);
-
-    match cmd.output() {
-        Ok(output) => {
-            if output.status.success() {
-                let stdout = String::from_utf8(output.stdout)
-                    .with_context(|| "Failed to read stdout from rust-analyzer")?;
-                if let Some(parent) = output_path.parent() {
-                    fs::create_dir_all(parent)?;
+    // Используем только SCIP подход
+    let scip_config = ScipConfig::new(ScipLanguage::Rust, project_dir, output_path);
+    
+    match check_scip_tool_availability(&ScipLanguage::Rust) {
+        Ok(true) => {
+            println!("Using rust-analyzer SCIP for Rust project indexing...");
+            match crate::scip::generate_scip_index(&scip_config) {
+                Ok(path) => return Ok(path),
+                Err(e) => {
+                    bail!("rust-analyzer SCIP generation failed: {}. Install rust-analyzer with: {}", e, get_installation_instruction(&ScipLanguage::Rust));
                 }
-                fs::write(output_path, stdout)
-                    .with_context(|| format!("Failed to write {}", output_path.display()))?;
-                return Ok(output_path.to_path_buf());
-            } else {
-                let stderr = String::from_utf8_lossy(&output.stderr).to_string();
-                bail!(
-                    "`rust-analyzer lsif` failed: {}\n\
-                     Suggestions:\n\
-                     1) Ensure `rust-analyzer` is installed and on PATH (install via rustup or from release).\n\
-                     2) Or generate manually: `rust-analyzer lsif . > compile_commands.json` and re-run the command.\n\
-                     Original output: {}",
-                    stderr,
-                    stderr
-                );
             }
         }
-        Err(e) => bail!(
-            "Failed to run `rust-analyzer` (is it installed and on PATH?): {}\n\
-             Install it and try again.",
-            e
-        ),
+        Ok(false) => {
+            let instruction = get_installation_instruction(&ScipLanguage::Rust);
+            bail!("rust-analyzer not found for SCIP generation. Install with: {}", instruction);
+        }
+        Err(e) => {
+            bail!("Error checking rust-analyzer availability: {}", e);
+        }
     }
 }
 

@@ -7,7 +7,7 @@ members = [
   "crates/symgraph-cxx",
   "crates/symgraph-rust",
   "crates/symgraph-models",
-  "crates/symgraph-scripts"
+  "test_scip_project"
 ]
 resolver = "2"
 
