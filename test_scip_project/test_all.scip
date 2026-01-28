@@ -1,0 +1,76 @@
+Generating SCIP start...
+rust-analyzer: Loading discovering sysroot
+rust-analyzer: Loading querying project metadata
+rust-analyzer: Loading cargo metadata: started
+rust-analyzer: Loading cargo metadata: started
+rust-analyzer: Loading cargo metadata:     Blocking waiting for file lock on package cache
+rust-analyzer: Loading cargo metadata: finished
+rust-analyzer: Loading cargo metadata: finished
+rust-analyzer: Loading proc-macro proc-macro2 built
+rust-analyzer: Loading build script proc-macro2 run
+rust-analyzer: Loading proc-macro quote built
+rust-analyzer: Loading proc-macro unicode-ident built
+rust-analyzer: Loading proc-macro cc built
+rust-analyzer: Loading proc-macro pkg-config built
+rust-analyzer: Loading proc-macro glob built
+rust-analyzer: Loading proc-macro version_check built
+rust-analyzer: Loading proc-macro vcpkg built
+rust-analyzer: Loading build script quote run
+rust-analyzer: Loading proc-macro proc-macro2 built
+rust-analyzer: Loading proc-macro clang-sys built
+rust-analyzer: Loading proc-macro tree-sitter-javascript built
+rust-analyzer: Loading proc-macro tree-sitter-typescript built
+rust-analyzer: Loading proc-macro tree-sitter built
+rust-analyzer: Loading proc-macro tree-sitter-python built
+rust-analyzer: Loading proc-macro ahash built
+rust-analyzer: Loading proc-macro quote built
+rust-analyzer: Loading proc-macro libsqlite3-sys built
+rust-analyzer: Loading proc-macro quote built
+rust-analyzer: Loading proc-macro serde built
+rust-analyzer: Loading proc-macro serde_json built
+rust-analyzer: Loading proc-macro serde_core built
+rust-analyzer: Loading proc-macro anyhow built
+rust-analyzer: Loading proc-macro libc built
+rust-analyzer: Loading proc-macro syn built
+rust-analyzer: Loading proc-macro thiserror built
+rust-analyzer: Loading proc-macro getrandom built
+rust-analyzer: Loading proc-macro assert_cmd built
+rust-analyzer: Loading proc-macro icu_normalizer_data built
+rust-analyzer: Loading proc-macro icu_properties_data built
+rust-analyzer: Loading proc-macro proc-macro2 built
+rust-analyzer: Loading proc-macro camino built
+rust-analyzer: Loading proc-macro synstructure built
+rust-analyzer: Loading proc-macro heck built
+rust-analyzer: Loading proc-macro zmij built
+rust-analyzer: Loading proc-macro zerocopy built
+rust-analyzer: Loading proc-macro serde_derive built
+rust-analyzer: Loading build script assert_cmd run
+rust-analyzer: Loading proc-macro serde_repr built
+rust-analyzer: Loading build script camino run
+rust-analyzer: Loading proc-macro zerofrom-derive built
+rust-analyzer: Loading build script zerocopy run
+rust-analyzer: Loading build script zmij run
+rust-analyzer: Loading proc-macro clap_derive built
+rust-analyzer: Loading proc-macro yoke-derive built
+rust-analyzer: Loading proc-macro thiserror-impl built
+rust-analyzer: Loading build script thiserror run
+rust-analyzer: Loading build script icu_normalizer_data run
+rust-analyzer: Loading build script getrandom run
+rust-analyzer: Loading build script icu_properties_data run
+rust-analyzer: Loading build script proc-macro2 run
+rust-analyzer: Loading proc-macro displaydoc built
+rust-analyzer: Loading proc-macro zerovec-derive built
+rust-analyzer: Loading build script serde run
+rust-analyzer: Loading build script quote run
+rust-analyzer: Loading build script serde_json run
+rust-analyzer: Loading build script serde_core run
+rust-analyzer: Loading build script libsqlite3-sys run
+rust-analyzer: Loading build script anyhow run
+rust-analyzer: Loading build script libc run
+rust-analyzer: Loading build script clang-sys run
+rust-analyzer: Loading build script ahash run
+rust-analyzer: Loading build script tree-sitter run
+rust-analyzer: Loading build script tree-sitter-python run
+rust-analyzer: Loading build script tree-sitter-javascript run
+rust-analyzer: Loading build script tree-sitter-typescript run
+Generating SCIP finished 69.5098922s

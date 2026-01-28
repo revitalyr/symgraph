@@ -20,6 +20,26 @@
             "args": ["scan-rust", "--manifest-path", ".", "--lsif", "project.lsif", "--db", "mydatabase.db"]
         },
         {
+            "name": "Debug orthosis_mirror_app scan",
+            "type": "cppdbg",
+            "request": "launch",
+            "program": "${workspaceFolder}/target/debug/symgraph-cli.exe",
+            "args": ["scan-rust", "--manifest-path", "D:\\work\\Projects\\STL Desktop Tool\\orthosis_mirror_app", "--db", "D:\\work\\Projects\\STL Desktop Tool\\orthosis_mirror_app\\orthosis_mirror_app.db"],
+            "cwd": "${workspaceFolder}",
+            "environment": [],
+            "externalConsole": false,
+            "MIMode": "gdb",
+            "miDebuggerPath": "gdb.exe",
+            "setupCommands": [
+                {
+                    "description": "Enable pretty-printing for gdb",
+                    "text": "-enable-pretty-printing",
+                    "ignoreFailures": true
+                }
+            ],
+            "preLaunchTask": "cargo build symgraph-cli"
+        },
+        {
             "name": "Debug unit tests in executable 'symgraph-cli'",
             "type": "lldb",
             "request": "launch",

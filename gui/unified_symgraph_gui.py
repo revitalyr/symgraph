@@ -326,14 +326,31 @@ Features:
             self.db_path_var.set(filename)
     
     def browse_viewer_db(self):
-        """Browse for viewer database file"""
-        filename = filedialog.askopenfilename(
+        """Browse for viewer database file/directory"""
+        # First try to select a directory (for Sled databases)
+        directory = filedialog.askdirectory(
             initialdir=os.path.dirname(self.viewer_db_var.get()),
-            filetypes=[("Sled Database", "*.db"), ("All Files", "*.*")]
+            title="Select Sled Database Directory"
         )
-        if filename:
-            self.viewer_db_var.set(filename)
-            self.refresh_database_info()
+        
+        if directory:
+            # Check if this looks like a Sled database
+            if os.path.exists(os.path.join(directory, 'db')):
+                self.viewer_db_var.set(directory)
+                self.refresh_database_info()
+            else:
+                messagebox.showwarning("Invalid Database", "Selected directory doesn't appear to be a valid Sled database")
+                return
+        
+        # If no directory selected, fall back to file selection (for legacy support)
+        else:
+            filename = filedialog.askopenfilename(
+                initialdir=os.path.dirname(self.viewer_db_var.get()),
+                filetypes=[("Sled Database Directory", "*"), ("All Files", "*.*")]
+            )
+            if filename:
+                self.viewer_db_var.set(filename)
+                self.refresh_database_info()
     
     def auto_detect_project(self):
         """Auto-detect project type in current directory"""
@@ -549,7 +566,13 @@ Features:
         if messagebox.askyesno("Confirm", "Are you sure you want to clear the database? This will delete all indexed data."):
             try:
                 if os.path.exists(db_path):
-                    os.remove(db_path)
+                    if os.path.isdir(db_path):
+                        # For Sled databases, remove the entire directory
+                        import shutil
+                        shutil.rmtree(db_path)
+                    else:
+                        # For files (legacy), just remove the file
+                        os.remove(db_path)
                 self.log_output(f"Database cleared: {db_path}")
                 messagebox.showinfo("Success", "Database cleared successfully")
             except Exception as e:
@@ -558,8 +581,26 @@ Features:
     def refresh_database_info(self):
         """Refresh database information"""
         db_path = self.viewer_db_var.get()
-        if not db_path or not os.path.exists(db_path):
-            self.db_info_var.set("Database file not found")
+        if not db_path:
+            self.db_info_var.set("No database selected")
+            self.results_tree.delete(*self.results_tree.get_children())
+            return
+        
+        # Check if database exists (Sled databases are directories)
+        if not os.path.exists(db_path):
+            self.db_info_var.set("Database not found")
+            self.results_tree.delete(*self.results_tree.get_children())
+            return
+        
+        # For Sled, check if it's a directory with the expected files
+        if os.path.isdir(db_path):
+            if not os.path.exists(os.path.join(db_path, 'db')):
+                self.db_info_var.set("Invalid Sled database (missing db file)")
+                self.results_tree.delete(*self.results_tree.get_children())
+                return
+        else:
+            # If it's a file, it might be an old SQLite database
+            self.db_info_var.set("Database appears to be SQLite format (not supported)")
             self.results_tree.delete(*self.results_tree.get_children())
             return
         
@@ -619,8 +660,22 @@ Features:
     def open_web_viewer(self):
         """Open web viewer"""
         db_path = self.current_db_path or self.viewer_db_var.get()
-        if not db_path or not os.path.exists(db_path):
-            messagebox.showerror("Error", "Please select a valid database file")
+        if not db_path:
+            messagebox.showerror("Error", "Please select a database path")
+            return
+        
+        # Check if database exists (Sled databases are directories)
+        if not os.path.exists(db_path):
+            messagebox.showerror("Error", "Database not found")
+            return
+        
+        # For Sled, check if it's a valid database directory
+        if os.path.isdir(db_path):
+            if not os.path.exists(os.path.join(db_path, 'db')):
+                messagebox.showerror("Error", "Invalid Sled database (missing db file)")
+                return
+        else:
+            messagebox.showerror("Error", "Database appears to be SQLite format (not supported)")
             return
         
         try:
@@ -802,8 +857,22 @@ if __name__ == '__main__':
     def show_statistics(self):
         """Show detailed statistics"""
         db_path = self.current_db_path or self.viewer_db_var.get()
-        if not db_path or not os.path.exists(db_path):
-            messagebox.showerror("Error", "Please select a valid database file")
+        if not db_path:
+            messagebox.showerror("Error", "Please select a database path")
+            return
+        
+        # Check if database exists (Sled databases are directories)
+        if not os.path.exists(db_path):
+            messagebox.showerror("Error", "Database not found")
+            return
+        
+        # For Sled, check if it's a valid database directory
+        if os.path.isdir(db_path):
+            if not os.path.exists(os.path.join(db_path, 'db')):
+                messagebox.showerror("Error", "Invalid Sled database (missing db file)")
+                return
+        else:
+            messagebox.showerror("Error", "Database appears to be SQLite format (not supported)")
             return
         
         try:
