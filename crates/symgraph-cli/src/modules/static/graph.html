@@ -1,0 +1,682 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Symgraph - Dependency Graph</title>
+    <script src="https://unpkg.com/cytoscape@3.26.0/dist/cytoscape.min.js"></script>
+    <script src="https://unpkg.com/cytoscape-cose-bilkent@4.1.0/cytoscape-cose-bilkent.js"></script>
+    <script src="https://unpkg.com/cytoscape-dagre@2.5.0/cytoscape-dagre.js"></script>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: #333;
+        }
+
+        .header {
+            background: rgba(255, 255, 255, 0.95);
+            backdrop-filter: blur(10px);
+            padding: 1rem 2rem;
+            box-shadow: 0 2px 20px rgba(0, 0, 0, 0.1);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .nav {
+            display: flex;
+            gap: 1rem;
+        }
+
+        .nav a {
+            text-decoration: none;
+            color: #666;
+            padding: 0.5rem 1rem;
+            border-radius: 6px;
+            transition: all 0.3s ease;
+        }
+
+        .nav a:hover, .nav a.active {
+            background: #667eea;
+            color: white;
+        }
+
+        .container {
+            display: flex;
+            height: calc(100vh - 80px);
+        }
+
+        .sidebar {
+            width: 300px;
+            background: rgba(255, 255, 255, 0.95);
+            backdrop-filter: blur(10px);
+            padding: 1.5rem;
+            overflow-y: auto;
+            box-shadow: 2px 0 20px rgba(0, 0, 0, 0.1);
+        }
+
+        .main-content {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .controls {
+            background: rgba(255, 255, 255, 0.95);
+            backdrop-filter: blur(10px);
+            padding: 1rem;
+            display: flex;
+            gap: 1rem;
+            align-items: center;
+            box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+        }
+
+        .search-box {
+            flex: 1;
+            max-width: 300px;
+        }
+
+        .search-box input {
+            width: 100%;
+            padding: 0.5rem 1rem;
+            border: 2px solid #e1e5e9;
+            border-radius: 6px;
+            font-size: 14px;
+            transition: border-color 0.3s ease;
+        }
+
+        .search-box input:focus {
+            outline: none;
+            border-color: #667eea;
+        }
+
+        .btn {
+            padding: 0.5rem 1rem;
+            background: #667eea;
+            color: white;
+            border: none;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 14px;
+            transition: all 0.3s ease;
+        }
+
+        .btn:hover {
+            background: #5a6fd8;
+            transform: translateY(-1px);
+        }
+
+        .btn.secondary {
+            background: #6c757d;
+        }
+
+        .btn.secondary:hover {
+            background: #5a6268;
+        }
+
+        #cy {
+            flex: 1;
+            background: white;
+            border-radius: 8px;
+            margin: 1rem;
+            box-shadow: 0 4px 20px rgba(0, 0, 0, 0.1);
+        }
+
+        .info-panel {
+            background: rgba(255, 255, 255, 0.95);
+            backdrop-filter: blur(10px);
+            padding: 1rem;
+            margin: 1rem;
+            border-radius: 8px;
+            box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+        }
+
+        .stats {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+            gap: 1rem;
+            margin-bottom: 1rem;
+        }
+
+        .stat-card {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 1rem;
+            border-radius: 8px;
+            text-align: center;
+        }
+
+        .stat-number {
+            font-size: 2rem;
+            font-weight: bold;
+        }
+
+        .stat-label {
+            font-size: 0.9rem;
+            opacity: 0.9;
+        }
+
+        .layout-controls {
+            display: flex;
+            gap: 0.5rem;
+            margin-bottom: 1rem;
+        }
+
+        .layout-btn {
+            padding: 0.4rem 0.8rem;
+            background: #f8f9fa;
+            border: 1px solid #dee2e6;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 12px;
+            transition: all 0.3s ease;
+        }
+
+        .layout-btn:hover, .layout-btn.active {
+            background: #667eea;
+            color: white;
+            border-color: #667eea;
+        }
+
+        .node-info {
+            background: #f8f9fa;
+            padding: 1rem;
+            border-radius: 6px;
+            margin-top: 1rem;
+            font-size: 14px;
+        }
+
+        .node-info h4 {
+            margin-bottom: 0.5rem;
+            color: #667eea;
+        }
+
+        .loading {
+            text-align: center;
+            padding: 2rem;
+            color: #666;
+        }
+
+        .error {
+            background: #f8d7da;
+            color: #721c24;
+            padding: 1rem;
+            border-radius: 6px;
+            margin: 1rem;
+        }
+    </style>
+</head>
+<body>
+    <header class="header">
+        <h1>Symgraph</h1>
+        <nav class="nav">
+            <a href="index.html">Dashboard</a>
+            <a href="graph.html" class="active">Dependency Graph</a>
+            <a href="scip_documents.html">SCIP Documents</a>
+            <a href="scip_symbols.html">SCIP Symbols</a>
+        </nav>
+    </header>
+
+    <div class="container">
+        <aside class="sidebar">
+            <div class="info-panel">
+                <h3>Graph Statistics</h3>
+                <div class="stats">
+                    <div class="stat-card">
+                        <div class="stat-number" id="nodeCount">0</div>
+                        <div class="stat-label">Nodes</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-number" id="edgeCount">0</div>
+                        <div class="stat-label">Edges</div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="info-panel">
+                <h3>Layout Options</h3>
+                <div class="layout-controls">
+                    <button class="layout-btn active" onclick="changeLayout('cose')">Force</button>
+                    <button class="layout-btn" onclick="changeLayout('dagre')">Hierarchical</button>
+                    <button class="layout-btn" onclick="changeLayout('circle')">Circle</button>
+                    <button class="layout-btn" onclick="changeLayout('grid')">Grid</button>
+                </div>
+            </div>
+
+            <div class="info-panel">
+                <h3>Filters</h3>
+                <div style="margin-bottom: 1rem;">
+                    <label style="display: block; margin-bottom: 0.5rem; font-weight: bold;">Node Type:</label>
+                    <select id="nodeTypeFilter" onchange="filterGraph()" style="width: 100%; padding: 0.5rem; border: 1px solid #ddd; border-radius: 4px;">
+                        <option value="">All Types</option>
+                        <option value="file">Files</option>
+                        <option value="symbol">Symbols</option>
+                        <option value="function">Functions</option>
+                        <option value="class">Classes</option>
+                    </select>
+                </div>
+                <div>
+                    <label style="display: block; margin-bottom: 0.5rem; font-weight: bold;">Edge Type:</label>
+                    <select id="edgeTypeFilter" onchange="filterGraph()" style="width: 100%; padding: 0.5rem; border: 1px solid #ddd; border-radius: 4px;">
+                        <option value="">All Types</option>
+                        <option value="defines">Defines</option>
+                        <option value="references">References</option>
+                        <option value="calls">Calls</option>
+                        <option value="inherits">Inherits</option>
+                    </select>
+                </div>
+            </div>
+
+            <div class="node-info" id="nodeInfo" style="display: none;">
+                <h4>Selected Node</h4>
+                <div id="nodeDetails"></div>
+            </div>
+        </aside>
+
+        <main class="main-content">
+            <div class="controls">
+                <div class="search-box">
+                    <input type="text" id="searchInput" placeholder="Search nodes..." onkeyup="searchNodes(event)">
+                </div>
+                <button class="btn" onclick="refreshGraph()">Refresh</button>
+                <button class="btn secondary" onclick="resetZoom()">Reset Zoom</button>
+                <button class="btn secondary" onclick="exportGraph()">Export</button>
+            </div>
+            <div id="cy"></div>
+        </main>
+    </div>
+
+    <script>
+        let cy;
+        let currentLayout = 'cose';
+        let allNodes = [];
+        let allEdges = [];
+
+        // Initialize Cytoscape
+        function initCytoscape() {
+            cy = cytoscape({
+                container: document.getElementById('cy'),
+                
+                elements: [],
+                
+                style: [
+                    {
+                        selector: 'node',
+                        style: {
+                            'background-color': '#667eea',
+                            'label': 'data(label)',
+                            'text-valign': 'center',
+                            'text-halign': 'center',
+                            'color': 'white',
+                            'text-outline-width': 2,
+                            'text-outline-color': '#667eea',
+                            'font-size': '12px',
+                            'width': '60px',
+                            'height': '60px'
+                        }
+                    },
+                    {
+                        selector: 'node[type="file"]',
+                        style: {
+                            'background-color': '#28a745',
+                            'text-outline-color': '#28a745',
+                            'shape': 'rectangle'
+                        }
+                    },
+                    {
+                        selector: 'node[type="symbol"]',
+                        style: {
+                            'background-color': '#ffc107',
+                            'text-outline-color': '#ffc107',
+                            'shape': 'diamond'
+                        }
+                    },
+                    {
+                        selector: 'node[type="function"]',
+                        style: {
+                            'background-color': '#17a2b8',
+                            'text-outline-color': '#17a2b8',
+                            'shape': 'round-rectangle'
+                        }
+                    },
+                    {
+                        selector: 'node[type="class"]',
+                        style: {
+                            'background-color': '#dc3545',
+                            'text-outline-color': '#dc3545',
+                            'shape': 'hexagon'
+                        }
+                    },
+                    {
+                        selector: 'edge',
+                        style: {
+                            'width': 2,
+                            'line-color': '#999',
+                            'target-arrow-color': '#999',
+                            'target-arrow-shape': 'triangle',
+                            'curve-style': 'bezier'
+                        }
+                    },
+                    {
+                        selector: 'edge[type="defines"]',
+                        style: {
+                            'line-color': '#28a745',
+                            'target-arrow-color': '#28a745'
+                        }
+                    },
+                    {
+                        selector: 'edge[type="references"]',
+                        style: {
+                            'line-color': '#ffc107',
+                            'target-arrow-color': '#ffc107'
+                        }
+                    },
+                    {
+                        selector: 'edge[type="calls"]',
+                        style: {
+                            'line-color': '#17a2b8',
+                            'target-arrow-color': '#17a2b8'
+                        }
+                    },
+                    {
+                        selector: 'edge[type="inherits"]',
+                        style: {
+                            'line-color': '#dc3545',
+                            'target-arrow-color': '#dc3545'
+                        }
+                    },
+                    {
+                        selector: 'node:selected',
+                        style: {
+                            'background-color': '#ff6b6b',
+                            'text-outline-color': '#ff6b6b',
+                            'border-width': 3,
+                            'border-color': '#ff6b6b'
+                        }
+                    },
+                    {
+                        selector: 'edge:selected',
+                        style: {
+                            'line-color': '#ff6b6b',
+                            'target-arrow-color': '#ff6b6b',
+                            'width': 4
+                        }
+                    }
+                ],
+                
+                layout: {
+                    name: 'cose',
+                    idealEdgeLength: 100,
+                    nodeOverlap: 20,
+                    refresh: 20,
+                    fit: true,
+                    padding: 30,
+                    randomize: false,
+                    componentSpacing: 100,
+                    nodeRepulsion: 400000,
+                    edgeElasticity: 100,
+                    nestingFactor: 5,
+                    gravity: 80,
+                    numIter: 1000,
+                    initialTemp: 200,
+                    coolingFactor: 0.95,
+                    minTemp: 1.0
+                }
+            });
+
+            // Event listeners
+            cy.on('tap', 'node', function(evt) {
+                const node = evt.target;
+                showNodeInfo(node);
+            });
+
+            cy.on('tap', function(evt) {
+                if (evt.target === cy) {
+                    hideNodeInfo();
+                }
+            });
+        }
+
+        // Load graph data from API
+        async function loadGraphData() {
+            try {
+                const response = await fetch('/api/graph');
+                if (!response.ok) {
+                    throw new Error('Failed to load graph data');
+                }
+                
+                const data = await response.json();
+                allNodes = data.nodes || [];
+                allEdges = data.edges || [];
+                
+                updateGraph();
+                updateStats();
+            } catch (error) {
+                console.error('Error loading graph data:', error);
+                showError('Failed to load graph data: ' + error.message);
+            }
+        }
+
+        // Update graph with current data
+        function updateGraph() {
+            const filteredNodes = filterNodes(allNodes);
+            const filteredEdges = filterEdges(allEdges, filteredNodes);
+            
+            cy.elements().remove();
+            cy.add([...filteredNodes, ...filteredEdges]);
+            
+            applyLayout();
+        }
+
+        // Filter nodes based on current filters
+        function filterNodes(nodes) {
+            const typeFilter = document.getElementById('nodeTypeFilter').value;
+            const searchTerm = document.getElementById('searchInput').value.toLowerCase();
+            
+            return nodes.filter(node => {
+                if (typeFilter && node.data.type !== typeFilter) {
+                    return false;
+                }
+                if (searchTerm && !node.data.label.toLowerCase().includes(searchTerm)) {
+                    return false;
+                }
+                return true;
+            });
+        }
+
+        // Filter edges based on current filters
+        function filterEdges(edges, nodes) {
+            const typeFilter = document.getElementById('edgeTypeFilter').value;
+            const nodeIds = new Set(nodes.map(n => n.data.id));
+            
+            return edges.filter(edge => {
+                if (typeFilter && edge.data.type !== typeFilter) {
+                    return false;
+                }
+                if (!nodeIds.has(edge.data.source) || !nodeIds.has(edge.data.target)) {
+                    return false;
+                }
+                return true;
+            });
+        }
+
+        // Apply layout to current graph
+        function applyLayout() {
+            const layoutOptions = {
+                cose: {
+                    name: 'cose',
+                    idealEdgeLength: 100,
+                    nodeOverlap: 20,
+                    refresh: 20,
+                    fit: true,
+                    padding: 30,
+                    randomize: false,
+                    componentSpacing: 100,
+                    nodeRepulsion: 400000,
+                    edgeElasticity: 100,
+                    nestingFactor: 5,
+                    gravity: 80,
+                    numIter: 1000,
+                    initialTemp: 200,
+                    coolingFactor: 0.95,
+                    minTemp: 1.0
+                },
+                dagre: {
+                    name: 'dagre',
+                    nodeSep: 50,
+                    edgeSep: 10,
+                    rankSep: 100,
+                    rankDir: 'TB',
+                    align: 'UL',
+                    fit: true,
+                    padding: 30
+                },
+                circle: {
+                    name: 'circle',
+                    fit: true,
+                    padding: 30,
+                    boundingBox: undefined,
+                    avoidOverlap: true,
+                    nodeDimensionsIncludeLabels: false,
+                    spacingFactor: undefined,
+                    radius: undefined,
+                    startAngle: 3 / 2 * Math.PI,
+                    sweep: undefined,
+                    clockwise: true,
+                    sort: undefined,
+                    animate: false,
+                    animationDuration: 500,
+                    animationEasing: undefined,
+                    ready: undefined,
+                    stop: undefined,
+                    transform: function (node, position) { return position; }
+                },
+                grid: {
+                    name: 'grid',
+                    fit: true,
+                    padding: 30,
+                    boundingBox: undefined,
+                    avoidOverlap: true,
+                    avoidOverlapPadding: 10,
+                    nodeDimensionsIncludeLabels: false,
+                    spacingFactor: undefined,
+                    condense: false,
+                    rows: undefined,
+                    cols: undefined,
+                    position: function(node) { return undefined; },
+                    sort: undefined,
+                    animate: false,
+                    animationDuration: 500,
+                    animationEasing: undefined,
+                    ready: undefined,
+                    stop: undefined,
+                    transform: function(node, position) { return position; }
+                }
+            };
+
+            cy.layout(layoutOptions[currentLayout]).run();
+        }
+
+        // Change layout
+        function changeLayout(layout) {
+            currentLayout = layout;
+            
+            // Update button states
+            document.querySelectorAll('.layout-btn').forEach(btn => {
+                btn.classList.remove('active');
+            });
+            event.target.classList.add('active');
+            
+            applyLayout();
+        }
+
+        // Filter graph
+        function filterGraph() {
+            updateGraph();
+        }
+
+        // Search nodes
+        function searchNodes(event) {
+            if (event.key === 'Enter' || event.type === 'keyup') {
+                updateGraph();
+            }
+        }
+
+        // Show node information
+        function showNodeInfo(node) {
+            const info = document.getElementById('nodeInfo');
+            const details = document.getElementById('nodeDetails');
+            
+            const data = node.data();
+            details.innerHTML = `
+                <p><strong>ID:</strong> ${data.id}</p>
+                <p><strong>Type:</strong> ${data.type}</p>
+                <p><strong>Label:</strong> ${data.label}</p>
+                ${data.file ? `<p><strong>File:</strong> ${data.file}</p>` : ''}
+                ${data.line ? `<p><strong>Line:</strong> ${data.line}</p>` : ''}
+                ${data.documentation ? `<p><strong>Documentation:</strong> ${data.documentation}</p>` : ''}
+            `;
+            
+            info.style.display = 'block';
+        }
+
+        // Hide node information
+        function hideNodeInfo() {
+            document.getElementById('nodeInfo').style.display = 'none';
+        }
+
+        // Update statistics
+        function updateStats() {
+            document.getElementById('nodeCount').textContent = cy.nodes().length;
+            document.getElementById('edgeCount').textContent = cy.edges().length;
+        }
+
+        // Refresh graph
+        function refreshGraph() {
+            loadGraphData();
+        }
+
+        // Reset zoom
+        function resetZoom() {
+            cy.fit();
+        }
+
+        // Export graph
+        function exportGraph() {
+            const graphJson = cy.json();
+            const blob = new Blob([JSON.stringify(graphJson, null, 2)], { type: 'application/json' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = 'symgraph-graph.json';
+            a.click();
+            URL.revokeObjectURL(url);
+        }
+
+        // Show error message
+        function showError(message) {
+            const errorDiv = document.createElement('div');
+            errorDiv.className = 'error';
+            errorDiv.textContent = message;
+            document.querySelector('.main-content').insertBefore(errorDiv, document.getElementById('cy'));
+            
+            setTimeout(() => {
+                errorDiv.remove();
+            }, 5000);
+        }
+
+        // Initialize on page load
+        document.addEventListener('DOMContentLoaded', function() {
+            initCytoscape();
+            loadGraphData();
+        });
+    </script>
+</body>
+</html>
