@@ -1,13 +1,15 @@
 //! # symgraph-discovery
 //!
-//! Модуль для обнаружения и загрузки информации о проектах C/C++.
+//! Модуль для обнаружения и загрузки информации о проектах.
 //!
 //! ## Возможности
 //! - Загрузка compile_commands.json
 //! - Генерация compile_commands.json из CMake, Make, Visual Studio проектов
 //! - Автоматическое определение типа системы сборки
+//! - SCIP (Source Code Intelligence Protocol) поддержка для различных языков
 
 pub mod generate;
+pub mod scip;
 
 use anyhow::Result;
 use serde::Deserialize;
@@ -16,6 +18,12 @@ use serde::Deserialize;
 pub use generate::{
     detect_build_system, generate_compile_commands, generate_from_cmake, generate_from_makefile,
     generate_from_solution, generate_from_vcxproj, generate_from_cargo, BuildSystem, CompileCommandEntry,
+};
+
+// Реэкспорт SCIP типов и функций
+pub use scip::{
+    ScipConfig, ScipLanguage, generate_scip_index, detect_language, 
+    check_scip_tool_availability, get_installation_instruction,
 };
 
 #[derive(Debug, Deserialize)]
