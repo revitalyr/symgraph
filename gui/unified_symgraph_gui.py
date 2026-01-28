@@ -8,11 +8,11 @@ import os
 import subprocess
 import threading
 import json
-import sqlite3
 import webbrowser
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 import tempfile
+import shutil
 
 class UnifiedSymgraphGUI:
     def __init__(self, root):
@@ -320,7 +320,7 @@ Features:
         filename = filedialog.asksaveasfilename(
             initialdir=os.path.dirname(self.db_path_var.get()),
             defaultextension=".db",
-            filetypes=[("SQLite Database", "*.db"), ("All Files", "*.*")]
+            filetypes=[("Sled Database", "*.db"), ("All Files", "*.*")]
         )
         if filename:
             self.db_path_var.set(filename)
@@ -329,7 +329,7 @@ Features:
         """Browse for viewer database file"""
         filename = filedialog.askopenfilename(
             initialdir=os.path.dirname(self.viewer_db_var.get()),
-            filetypes=[("SQLite Database", "*.db"), ("All Files", "*.*")]
+            filetypes=[("Sled Database", "*.db"), ("All Files", "*.*")]
         )
         if filename:
             self.viewer_db_var.set(filename)
@@ -464,7 +464,7 @@ Features:
                         full_manifest_path = os.path.join(project_dir, manifest_path)
                     else:
                         full_manifest_path = manifest_path
-                    cmd_args.extend(['--manifest-path', full_manifest_path])
+                    cmd_args.extend(['--manifest', full_manifest_path])
                 
                 lsif_path = self.param_vars.get('lsif_path', tk.StringVar()).get()
                 if lsif_path:
@@ -564,53 +564,54 @@ Features:
             return
         
         try:
-            conn = sqlite3.connect(db_path)
-            cursor = conn.cursor()
+            # Use CLI API to get stats
+            result = subprocess.run([
+                'cargo', 'run', '--package', 'symgraph-cli', '--', 
+                'api', 'stats', '--db', db_path
+            ], capture_output=True, text=True, cwd='d:\\work\\Projects\\symgraph')
             
-            # Get basic statistics
-            cursor.execute("SELECT COUNT(*) FROM files")
-            file_count = cursor.fetchone()[0]
-            
-            cursor.execute("SELECT COUNT(*) FROM symbols")
-            symbol_count = cursor.fetchone()[0]
-            
-            cursor.execute("SELECT COUNT(*) FROM edges")
-            edge_count = cursor.fetchone()[0]
-            
-            self.db_info_var.set(f"Files: {file_count}, Symbols: {symbol_count}, Edges: {edge_count}")
-            
-            # Populate tree view
-            self.results_tree.delete(*self.results_tree.get_children())
-            
-            # Add file categories
-            cursor.execute("""
-                SELECT category, COUNT(*) as count 
-                FROM files 
-                WHERE category IS NOT NULL 
-                GROUP BY category 
-                ORDER BY count DESC
-            """)
-            categories = cursor.fetchall()
-            
-            for category, count in categories:
-                category_node = self.results_tree.insert('', 'end', text=f"{category} ({count})", values=('Category', category, '', count))
+            if result.returncode == 0:
+                stats = json.loads(result.stdout)
+                file_count = stats.get('files', 0)
+                symbol_count = stats.get('symbols', 0)
+                edge_count = stats.get('edges', 0)
                 
-                # Add files in this category
-                cursor.execute("""
-                    SELECT path, COUNT(s.id) as symbol_count 
-                    FROM files f 
-                    LEFT JOIN symbols s ON f.id = s.file_id 
-                    WHERE f.category = ?
-                    GROUP BY f.id 
-                    ORDER BY symbol_count DESC 
-                    LIMIT 10
-                """, (category,))
+                self.db_info_var.set(f"Files: {file_count}, Symbols: {symbol_count}, Edges: {edge_count}")
                 
-                for file_path, symbol_count in cursor.fetchall():
-                    self.results_tree.insert(category_node, 'end', text=os.path.basename(file_path), 
-                                           values=('File', os.path.basename(file_path), file_path, symbol_count))
-            
-            conn.close()
+                # Get files using CLI API
+                files_result = subprocess.run([
+                    'cargo', 'run', '--package', 'symgraph-cli', '--', 
+                    'api', 'files', '--db', db_path
+                ], capture_output=True, text=True, cwd='d:\\work\\Projects\\symgraph')
+                
+                # Populate tree view
+                self.results_tree.delete(*self.results_tree.get_children())
+                
+                if files_result.returncode == 0:
+                    files = json.loads(files_result.stdout)
+                    
+                    # Group files by category
+                    categories = {}
+                    for file_info in files:
+                        category = file_info.get('category', 'unknown')
+                        if category not in categories:
+                            categories[category] = []
+                        categories[category].append(file_info)
+                    
+                    # Add categories to tree
+                    for category, files_list in categories.items():
+                        category_node = self.results_tree.insert('', 'end', text=f"{category} ({len(files_list)})", values=('Category', category, '', len(files_list)))
+                        
+                        # Add files in this category (limit to 10 for performance)
+                        for file_info in sorted(files_list, key=lambda x: x.get('symbol_count', 0), reverse=True)[:10]:
+                            file_path = file_info.get('path', '')
+                            symbol_count = file_info.get('symbol_count', 0)
+                            self.results_tree.insert(category_node, 'end', text=os.path.basename(file_path), 
+                                                   values=('File', os.path.basename(file_path), file_path, symbol_count))
+                else:
+                    self.db_info_var.set(f"Error getting files: {files_result.stderr}")
+            else:
+                self.db_info_var.set(f"Error reading database: {result.stderr}")
             
         except Exception as e:
             self.db_info_var.set(f"Error reading database: {str(e)}")
@@ -641,187 +642,127 @@ Features:
         
         # Simple Flask app content
         app_content = f'''
-from flask import Flask, request, jsonify
-import sqlite3
+from flask import Flask, request, jsonify, send_from_directory
+import subprocess
+import json
 import os
 
 app = Flask(__name__)
 
+def call_rust_api(endpoint, db_path, search=None):
+    """Call Rust symgraph CLI to get data"""
+    try:
+        cmd = ['cargo', 'run', '--package', 'symgraph-cli', '--', 'api', endpoint, '--db', db_path]
+        if search:
+            cmd.extend(['--search', search])
+        
+        result = subprocess.run(
+            cmd, 
+            capture_output=True, 
+            text=True, 
+            cwd='d:\\\\work\\\\Projects\\\\symgraph'
+        )
+        
+        if result.returncode == 0:
+            return json.loads(result.stdout)
+        else:
+            return {{"error": result.stderr, "code": result.returncode}}
+    except Exception as e:
+        return {{"error": str(e), "code": 500}}
+
 @app.route('/')
 def index():
-    return """
-<!DOCTYPE html>
-<html>
-<head>
-    <title>Symgraph Viewer</title>
-    <style>
-        body {{ font-family: Arial, sans-serif; margin: 20px; }}
-        .container {{ max-width: 1200px; margin: 0 auto; }}
-        .stats {{ background: #f5f5f5; padding: 15px; border-radius: 5px; margin-bottom: 20px; }}
-        .section {{ margin-bottom: 30px; }}
-        table {{ width: 100%; border-collapse: collapse; }}
-        th, td {{ padding: 8px; text-align: left; border-bottom: 1px solid #ddd; }}
-        th {{ background-color: #f2f2f2; }}
-        .search {{ margin-bottom: 20px; }}
-        input[type="text"] {{ padding: 5px; width: 300px; }}
-        button {{ padding: 5px 15px; background: #007cba; color: white; border: none; cursor: pointer; }}
-    </style>
-</head>
-<body>
-    <div class="container">
-        <h1>Symgraph Project Viewer</h1>
-        
-        <div class="search">
-            <input type="text" id="searchInput" placeholder="Search symbols..." onkeyup="searchSymbols()">
-            <button onclick="loadData()">Refresh</button>
-        </div>
-        
-        <div id="stats" class="stats">
-            <h3>Database Statistics</h3>
-            <p>Loading...</p>
-        </div>
-        
-        <div class="section">
-            <h3>Files by Category</h3>
-            <div id="files">Loading...</div>
-        </div>
-        
-        <div class="section">
-            <h3>Symbols</h3>
-            <div id="symbols">Loading...</div>
-        </div>
-    </div>
-    
-    <script>
-        function loadData() {{
-            loadStats();
-            loadFiles();
-            loadSymbols();
-        }}
-        
-        function loadStats() {{
-            fetch('/api/stats')
-                .then(response => response.json())
-                .then(data => {{
-                    document.getElementById('stats').innerHTML = `
-                        <h3>Database Statistics</h3>
-                        <p><strong>Files:</strong> ${{data.files}}</p>
-                        <p><strong>Symbols:</strong> ${{data.symbols}}</p>
-                        <p><strong>Edges:</strong> ${{data.edges}}</p>
-                    `;
-                }});
-        }}
-        
-        function loadFiles() {{
-            fetch('/api/files')
-                .then(response => response.json())
-                .then(data => {{
-                    let html = '<table><tr><th>Path</th><th>Language</th><th>Category</th><th>Symbols</th></tr>';
-                    data.forEach(file => {{
-                        html += `<tr><td>${{file.path}}</td><td>${{file.lang}}</td><td>${{file.category}}</td><td>${{file.symbol_count}}</td></tr>`;
-                    }});
-                    html += '</table>';
-                    document.getElementById('files').innerHTML = html;
-                }});
-        }}
-        
-        function loadSymbols() {{
-            fetch('/api/symbols')
-                .then(response => response.json())
-                .then(data => {{
-                    let html = '<table><tr><th>Name</th><th>Kind</th><th>File</th><th>Category</th></tr>';
-                    data.forEach(symbol => {{
-                        html += `<tr><td>${{symbol.name}}</td><td>${{symbol.kind}}</td><td>${{symbol.file_path}}</td><td>${{symbol.category}}</td></tr>`;
-                    }});
-                    html += '</table>';
-                    document.getElementById('symbols').innerHTML = html;
-                }});
-        }}
-        
-        function searchSymbols() {{
-            const query = document.getElementById('searchInput').value;
-            fetch(`/api/symbols?search=${{query}}`)
-                .then(response => response.json())
-                .then(data => {{
-                    let html = '<table><tr><th>Name</th><th>Kind</th><th>File</th><th>Category</th></tr>';
-                    data.forEach(symbol => {{
-                        html += `<tr><td>${{symbol.name}}</td><td>${{symbol.kind}}</td><td>${{symbol.file_path}}</td><td>${{symbol.category}}</td></tr>`;
-                    }});
-                    html += '</table>';
-                    document.getElementById('symbols').innerHTML = html;
-                }});
-        }}
-        
-        loadData();
-    </script>
-</body>
-</html>
-"""
+    # Serve the static HTML file
+    try:
+        with open('static/index.html', 'r', encoding='utf-8') as f:
+            return f.read()
+    except FileNotFoundError:
+        return """
+        <!DOCTYPE html>
+        <html>
+        <head>
+            <title>Error</title>
+        </head>
+        <body>
+            <h1>Error</h1>
+            <p>Static files not found. Please ensure the static directory exists with index.html</p>
+        </body>
+        </html>
+        """, 404
+
+@app.route('/static/<path:filename>')
+def serve_static(filename):
+    """Serve static files"""
+    try:
+        return send_from_directory('static', filename)
+    except FileNotFoundError:
+        return "File not found", 404
 
 @app.route('/api/stats')
 def get_stats():
-    conn = sqlite3.connect(r'{db_path}')
-    cursor = conn.cursor()
-    
-    cursor.execute("SELECT COUNT(*) FROM files")
-    files = cursor.fetchone()[0]
-    
-    cursor.execute("SELECT COUNT(*) FROM symbols")
-    symbols = cursor.fetchone()[0]
-    
-    cursor.execute("SELECT COUNT(*) FROM edges")
-    edges = cursor.fetchone()[0]
-    
-    conn.close()
-    
-    return jsonify({{'files': files, 'symbols': symbols, 'edges': edges}})
+    data = call_rust_api('stats', r'{db_path}')
+    if 'error' in data:
+        return jsonify(data), 500
+    return jsonify(data)
 
 @app.route('/api/files')
 def get_files():
-    conn = sqlite3.connect(r'{db_path}')
-    cursor = conn.cursor()
-    
-    cursor.execute("""
-        SELECT f.path, f.lang, f.category, f.purpose, COUNT(s.id) as symbol_count
-        FROM files f
-        LEFT JOIN symbols s ON f.id = s.file_id
-        GROUP BY f.id
-        ORDER BY f.category, f.path
-    """)
-    files = cursor.fetchall()
-    conn.close()
-    
-    return jsonify([{{'path': f[0], 'lang': f[1], 'category': f[2], 'purpose': f[3], 'symbol_count': f[4]}} for f in files])
+    search = request.args.get('search', '')
+    data = call_rust_api('files', r'{db_path}', search if search else None)
+    if 'error' in data:
+        return jsonify(data), 500
+    return jsonify(data)
 
 @app.route('/api/symbols')
 def get_symbols():
     search = request.args.get('search', '')
+    data = call_rust_api('symbols', r'{db_path}', search if search else None)
+    if 'error' in data:
+        return jsonify(data), 500
+    return jsonify(data)
+
+@app.route('/api/scip/documents')
+def get_scip_documents():
+    # For SCIP documents, we'll use files endpoint and filter by SCIP-related categories
+    data = call_rust_api('files', r'{db_path}')
+    if 'error' in data:
+        return jsonify(data), 500
     
-    conn = sqlite3.connect(r'{db_path}')
-    cursor = conn.cursor()
+    # Filter files that might be SCIP-related (category containing 'scip' or similar)
+    scip_files = [
+        {{
+            'relative_path': f.get('path', ''),
+            'language': f.get('language', f.get('lang', '')),
+            'category': f.get('category', ''),
+            'purpose': f.get('purpose', ''),
+            'symbol_count': f.get('symbol_count', 0)
+        }}
+        for f in data 
+        if 'scip' in f.get('category', '').lower() or 'scip' in f.get('purpose', '').lower()
+    ]
     
-    if search:
-        cursor.execute("""
-            SELECT s.name, s.kind, f.path as file_path, f.category, f.purpose
-            FROM symbols s
-            JOIN files f ON s.file_id = f.id
-            WHERE s.name LIKE ?
-            ORDER BY s.name
-            LIMIT 100
-        """, (f'%{{search}}%',))
-    else:
-        cursor.execute("""
-            SELECT s.name, s.kind, f.path as file_path, f.category, f.purpose
-            FROM symbols s
-            JOIN files f ON s.file_id = f.id
-            ORDER BY s.name
-            LIMIT 100
-        """)
+    return jsonify(scip_files)
+
+@app.route('/api/scip/symbols')
+def get_scip_symbols():
+    search = request.args.get('search', '')
+    data = call_rust_api('symbols', r'{db_path}', search if search else None)
+    if 'error' in data:
+        return jsonify(data), 500
     
-    symbols = cursor.fetchall()
-    conn.close()
+    # Transform symbols to SCIP format
+    scip_symbols = [
+        {{
+            'display_name': s.get('name', ''),
+            'symbol_kind': s.get('kind', ''),
+            'symbol': s.get('name', ''),
+            'file_path': s.get('file_id', ''),
+            'category': 'scip'
+        }}
+        for s in data
+    ]
     
-    return jsonify([{{'name': s[0], 'kind': s[1], 'file_path': s[2], 'category': s[3], 'purpose': s[4]}} for s in symbols])
+    return jsonify(scip_symbols)
 
 if __name__ == '__main__':
     app.run(debug=False, port=5000)
@@ -832,6 +773,24 @@ if __name__ == '__main__':
         app_file = os.path.join(temp_dir, 'symgraph_viewer.py')
         with open(app_file, 'w') as f:
             f.write(app_content)
+        
+        # Copy static files to temp directory
+        static_dir = os.path.join(temp_dir, 'static')
+        os.makedirs(static_dir, exist_ok=True)
+        
+        # Get the path to our static files
+        current_dir = os.path.dirname(os.path.abspath(__file__))
+        source_static = os.path.join(current_dir, '..', 'static')
+        
+        # Copy all static files
+        if os.path.exists(source_static):
+            for item in os.listdir(source_static):
+                source_item = os.path.join(source_static, item)
+                dest_item = os.path.join(static_dir, item)
+                if os.path.isdir(source_item):
+                    shutil.copytree(source_item, dest_item, dirs_exist_ok=True)
+                else:
+                    shutil.copy2(source_item, dest_item)
         
         # Start the Flask server
         self.web_server_process = subprocess.Popen(
@@ -848,73 +807,49 @@ if __name__ == '__main__':
             return
         
         try:
-            conn = sqlite3.connect(db_path)
-            cursor = conn.cursor()
+            # Use CLI API to get stats
+            result = subprocess.run([
+                'cargo', 'run', '--package', 'symgraph-cli', '--', 
+                'api', 'stats', '--db', db_path
+            ], capture_output=True, text=True, cwd='d:\\work\\Projects\\symgraph')
             
-            # Get detailed statistics
-            cursor.execute("SELECT COUNT(*) FROM files")
-            file_count = cursor.fetchone()[0]
-            
-            cursor.execute("SELECT COUNT(*) FROM symbols")
-            symbol_count = cursor.fetchone()[0]
-            
-            cursor.execute("SELECT COUNT(*) FROM edges")
-            edge_count = cursor.fetchone()[0]
-            
-            # Get file categories
-            cursor.execute("""
-                SELECT category, COUNT(*) as count
-                FROM files
-                WHERE category IS NOT NULL
-                GROUP BY category
-                ORDER BY count DESC
-            """)
-            categories = cursor.fetchall()
-            
-            # Get symbol types
-            cursor.execute("""
-                SELECT kind, COUNT(*) as count
-                FROM symbols
-                GROUP BY kind
-                ORDER BY count DESC
-            """)
-            symbol_types = cursor.fetchall()
-            
-            conn.close()
-            
-            # Create statistics window
-            stats_window = tk.Toplevel(self.root)
-            stats_window.title("Database Statistics")
-            stats_window.geometry("600x400")
-            
-            # Create text widget
-            text_widget = scrolledtext.ScrolledText(stats_window, wrap='word')
-            text_widget.pack(fill='both', expand=True, padx=10, pady=10)
-            
-            # Add statistics
-            stats_text = f"""
-DATABASE STATISTICS
+            if result.returncode == 0:
+                stats = json.loads(result.stdout)
+                file_count = stats.get('files', 0)
+                symbol_count = stats.get('symbols', 0)
+                edge_count = stats.get('edges', 0)
+                
+                # Get files using CLI API for categories
+                files_result = subprocess.run([
+                    'cargo', 'run', '--package', 'symgraph-cli', '--', 
+                    'api', 'files', '--db', db_path
+                ], capture_output=True, text=True, cwd='d:\\work\\Projects\\symgraph')
+                
+                # Get file categories
+                categories = {}
+                if files_result.returncode == 0:
+                    files = json.loads(files_result.stdout)
+                    for file_info in files:
+                        category = file_info.get('category', 'unknown')
+                        categories[category] = categories.get(category, 0) + 1
+                
+                # Create statistics message
+                stats_text = f"""
+Database Statistics
 ==================
 
-Overview:
---------
 Files: {file_count}
-Symbols: {symbol_count}
+Symbols: {symbol_count}  
 Edges: {edge_count}
 
 File Categories:
----------------
 """
-            
-            for category, count in categories:
-                stats_text += f"{category}: {count}\n"
-            
-            stats_text += "\nSymbol Types:\n-------------\n"
-            for kind, count in symbol_types:
-                stats_text += f"{kind}: {count}\n"
-            
-            text_widget.insert('1.0', stats_text)
-            text_widget.config(state='disabled')
+                for category, count in sorted(categories.items(), key=lambda x: x[1], reverse=True):
+                    stats_text += f"  {category}: {count}\n"
+                
+                messagebox.showinfo("Database Statistics", stats_text)
+            else:
+                messagebox.showerror("Error", f"Failed to get statistics: {result.stderr}")
             
         except Exception as e:
             messagebox.showerror("Error", f"Failed to show statistics: {str(e)}")
