@@ -13,6 +13,8 @@ from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 import tempfile
 import shutil
+import requests
+import time
 
 class UnifiedSymgraphGUI:
     def __init__(self, root):
@@ -682,10 +684,32 @@ Features:
             # Start Flask web server
             self.start_web_server(db_path)
             
-            # Open browser
-            webbrowser.open('http://localhost:5000')
+            # Wait for server to start and check if it's ready
+            server_ready = False
+            for attempt in range(10):  # Try for up to 10 seconds
+                try:
+                    time.sleep(1)  # Wait 1 second between attempts
+                    response = requests.get('http://localhost:5000', timeout=2)
+                    if response.status_code == 200:
+                        server_ready = True
+                        break
+                except (requests.exceptions.RequestException, requests.exceptions.ConnectionError):
+                    continue
             
-            self.status_var.set("Web viewer opened at http://localhost:5000")
+            if server_ready:
+                # Open browser
+                webbrowser.open('http://localhost:5000')
+                self.status_var.set("Web viewer opened at http://localhost:5000")
+            else:
+                # Check if the server process is still running
+                if self.web_server_process and self.web_server_process.poll() is not None:
+                    stdout, stderr = self.web_server_process.communicate()
+                    error_msg = f"Server process terminated. Error: {stderr.decode() if stderr else 'Unknown error'}"
+                else:
+                    error_msg = "Server did not respond within 10 seconds. Please check if port 5000 is available."
+                
+                messagebox.showerror("Error", f"Failed to start web server.\n{error_msg}")
+                self.status_var.set("Failed to start web server")
             
         except Exception as e:
             messagebox.showerror("Error", f"Failed to open web viewer: {str(e)}")
@@ -848,11 +872,23 @@ if __name__ == '__main__':
                     shutil.copy2(source_item, dest_item)
         
         # Start the Flask server
-        self.web_server_process = subprocess.Popen(
-            ['python', app_file],
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE
-        )
+        try:
+            self.web_server_process = subprocess.Popen(
+                ['python', app_file],
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                cwd=temp_dir
+            )
+            
+            # Check if process started successfully
+            time.sleep(0.5)
+            if self.web_server_process.poll() is not None:
+                # Process has already terminated
+                stdout, stderr = self.web_server_process.communicate()
+                raise Exception(f"Flask server failed to start: {stderr.decode() if stderr else 'Unknown error'}")
+                
+        except Exception as e:
+            raise Exception(f"Failed to start Flask server: {str(e)}")
     
     def show_statistics(self):
         """Show detailed statistics"""
