@@ -131,6 +131,7 @@ fn generate_rust_scip(config: &ScipConfig) -> Result<PathBuf> {
         .arg(".")
         .arg("--output")
         .arg(&config.output_path)
+        .arg("--exclude-vendored-libraries")
         .current_dir(&config.project_path);
 
     // Добавляем дополнительные аргументы

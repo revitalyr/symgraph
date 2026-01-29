@@ -208,6 +208,15 @@ class UnifiedSymgraphGUI:
         log_frame = ttk.LabelFrame(progress_frame, text="Output Log", padding="5")
         log_frame.pack(fill='both', expand=True, pady=(10, 0))
         
+        # Log controls
+        log_controls = ttk.Frame(log_frame)
+        log_controls.pack(fill='x', pady=(0, 5))
+        
+        ttk.Button(log_controls, text="📋 Copy to Clipboard", 
+                  command=self.copy_log_to_clipboard).pack(side='right')
+        ttk.Button(log_controls, text="🗑️ Clear Log", 
+                  command=self.clear_log).pack(side='right', padx=(0, 5))
+        
         self.output_log = scrolledtext.ScrolledText(log_frame, height=10, wrap='word')
         self.output_log.pack(fill='both', expand=True)
         
@@ -557,6 +566,24 @@ Features:
         self.output_log.insert(tk.END, f"{message}\n")
         self.output_log.see(tk.END)
         self.root.update_idletasks()
+    
+    def copy_log_to_clipboard(self):
+        """Copy all log content to clipboard"""
+        try:
+            log_content = self.output_log.get(1.0, tk.END)
+            if log_content.strip():
+                self.root.clipboard_clear()
+                self.root.clipboard_append(log_content)
+                self.log_output("✅ Log content copied to clipboard")
+            else:
+                self.log_output("ℹ️ No content to copy")
+        except Exception as e:
+            self.log_output(f"❌ Failed to copy to clipboard: {e}")
+    
+    def clear_log(self):
+        """Clear the output log"""
+        self.output_log.delete(1.0, tk.END)
+        self.log_output("📋 Log cleared")
     
     def clear_database(self):
         """Clear the database"""
